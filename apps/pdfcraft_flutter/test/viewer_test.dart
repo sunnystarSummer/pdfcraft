@@ -26,6 +26,19 @@ void main() {
     await expectLater(find.byType(MaterialApp), matchesGoldenFile('goldens/shell.png'));
   });
 
+  testWidgets('a long status does not overflow the bottom bar', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(393, 852)); // iPhone 15 Pro
+    await tester.pumpWidget(const MaterialApp(debugShowCheckedModeBanner: false, home: ViewerPage(autoOpen: false)));
+    await tester.pumpAndSettle();
+
+    final state = tester.state<ViewerPageState>(find.byType(ViewerPage));
+    state.showStatus('"${'a line of selected text that is far too long to fit ' * 4}"');
+    await tester.pumpAndSettle();
+
+    // A RenderFlex overflow is reported as an exception by the test binding.
+    expect(tester.takeException(), isNull, reason: 'the status row overflowed');
+  });
+
   testWidgets('zoom is clamped rather than running away', (tester) async {
     await tester.pumpWidget(const MaterialApp(debugShowCheckedModeBanner: false, home: ViewerPage(autoOpen: false)));
     await tester.pumpAndSettle();

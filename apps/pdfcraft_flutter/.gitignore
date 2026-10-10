@@ -46,3 +46,6 @@ app.*.map.json
 
 # The engine static library is built by tool/ios.sh, not committed (~71 MB).
 ios/pdfcraft_engine/lib/*.a
+
+# Golden-diff artefacts written when a golden test fails; transient debug output.
+test/failures/
