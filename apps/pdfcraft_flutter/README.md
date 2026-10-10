@@ -33,6 +33,28 @@ The engine-backed tests skip when the library is missing, so `flutter test` alon
 
 `flutter test --update-goldens` writes `test/goldens/`. This is the Flutter equivalent of `cargo run -p pdfcraft-ui-egui --example shot`: it runs with no window and no display, takes about a second, and can be driven by label (`tester.tap(find.text(...))`) and typed into. `test/flutter_test_config.dart` loads a real text font and the Material icon font first — without it every glyph and icon renders as a filled box and the screenshots are useless for review.
 
+## Looking at it (the agent loop)
+
+`CLAUDE.md` requires UI work to be looked at. The egui shell has `pdfcraft-cli ui --control FILE screenshot` and `cargo run -p pdfcraft-ui-egui --example shot`; this is the equivalent here, and it is headless too — no window, no display, a few seconds:
+
+```
+apps/pdfcraft_flutter/tool/shot.sh --out /tmp/shell.png \
+  --open /tmp/doc.pdf \
+  --menu Pages \
+  --click 'Duplicate pages' \
+  --inspect
+```
+
+Verbs: `--open` a file, `--command <registry id>`, `--menu <title>` to open the command drawer and expand one menu, `--click <label>`, `--type <text>`, `--tap x,y`, `--inspect` to print every label on screen, `--size 393x852` for a phone. `--script steps.json` takes the same steps as JSON, like `pdfcraft-cli run --script`.
+
+`--inspect` is how you find out what `--click` can target. A command that is greyed out does nothing when clicked, so if a click seems to be ignored, check that the engine thinks it is enabled — see below.
+
+## Commands come from the engine
+
+Menus, labels, shortcuts and the greyed-out state are all read from `command_list`; none of it is restated in Dart, so this shell and the egui one cannot drift. `lib/src/commands.dart` is the registry model and `ViewerPageState.runCommand` is this shell's answer to "what does this id do here", the same question `crates/ui-egui/src/commands.rs` answers for egui.
+
+Two things to know. **Enablement needs the active document**: `command_list` takes a `doc` argument, and without it every command that needs a document reports disabled — which looks exactly like a broken menu. And **every outcome is named** (`done`, `unknown`, `unsupported`, `failed`), because a shell that silently does nothing is indistinguishable from one that is broken.
+
 ## Performance
 
 `flutter run -t lib/bench.dart -d macos --release` (or build it the way `tool/macos.sh` does and run the binary) measures the two numbers that matter and prints them to stderr. On a 469-page text document, 12 cores, Intel Mac:

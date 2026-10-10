@@ -4,6 +4,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 
+import 'commands.dart';
 import 'engine.dart';
 
 /// One line of page text with its view-space rectangle (origin top-left, PDF points).
@@ -87,6 +88,9 @@ class ViewerPageState extends State<ViewerPage> {
   List<TextLine> _lines = const [];
   int _selected = -1;
 
+  /// The engine's command registry. Menus, labels, shortcuts and enablement all come from here.
+  CommandRegistry _registry = CommandRegistry.empty;
+
   @override
   void initState() {
     super.initState();
@@ -120,6 +124,7 @@ class ViewerPageState extends State<ViewerPage> {
       _doc = created['doc'] as int;
       _pageCount = created['pages'] as int? ?? 1;
       _loadPage();
+      _refreshCommands();
       setState(() => _status = 'opened');
       _request();
       _pump = Timer.periodic(const Duration(milliseconds: 16), (_) => _drain());
@@ -238,6 +243,124 @@ class ViewerPageState extends State<ViewerPage> {
     _request();
   }
 
+  /// Open a PDF from disk. Returns the error when it fails, so a caller (and the shot driver)
+  /// learns why instead of staring at an empty viewport.
+  String? openPath(String path) {
+    try {
+      final opened = engine.call('doc_open', {'path': path});
+      setState(() {
+        _doc = opened['doc'] as int;
+        _pageCount = opened['pages'] as int? ?? 1;
+        _current = 1;
+        _dirty = false;
+        for (final img in _pages.values) {
+          img.dispose();
+        }
+        _pages.clear();
+        _status = 'opened';
+      });
+      _loadPage();
+      _refreshCommands();
+      _request();
+      _pump ??= Timer.periodic(const Duration(milliseconds: 16), (_) => _drain());
+      return null;
+    } on EngineError catch (e) {
+      setState(() => _status = e.message);
+      return e.message;
+    }
+  }
+
+  /// Re-read the registry: `enabled` depends on session state, so it changes with every edit.
+  void _refreshCommands() {
+    try {
+      _registry = CommandRegistry.load(engine, doc: _doc);
+    } on EngineError catch (e) {
+      _status = e.message;
+    }
+  }
+
+  CommandRegistry get registry => _registry;
+
+  /// Lets the shot driver open the command drawer without a pointer.
+  final GlobalKey<ScaffoldState> scaffoldKey = GlobalKey<ScaffoldState>();
+
+  /// The raster of the page on screen, if one has arrived. The shot driver waits on this so a
+  /// screenshot is never taken of an empty viewport.
+  ui.Image? get pageImage => _pages[_current];
+
+  /// Run a registry command by id. This is the Flutter shell's answer to the same question
+  /// `crates/ui-egui/src/commands.rs` answers for egui: what does this id do *here*.
+  Future<CommandResult> runCommand(String id) async {
+    final command = _registry.byId(id);
+    if (command == null) return CommandResult(CommandOutcome.unknown, id);
+
+    switch (id) {
+      // Zoom is not a registry command: the registry models Acrobat's view modes, which set a
+      // page display and a zoom at once. These are the ids that exist.
+      case 'view.fit_one_page':
+        setZoom(_fitScale(whole: true));
+        return const CommandResult(CommandOutcome.done);
+      case 'view.fit_width_scrolling':
+      case 'view.fit_visible':
+        setZoom(_fitScale(whole: false));
+        return const CommandResult(CommandOutcome.done);
+      case 'comment.note':
+        await addComment();
+        return const CommandResult(CommandOutcome.done);
+
+      // Commands whose tool needs arguments the registry does not carry. The egui shell asks
+      // the user (a dialog, a selection); on mobile these act on the page in view.
+      case 'page.rotate':
+        return _viaTool('page_rotate', {'degrees': 90, 'pages': [_current]});
+      case 'page.rotate_ccw':
+        return _viaTool('page_rotate', {'degrees': -90, 'pages': [_current]});
+      case 'page.duplicate':
+        return _viaTool('page_duplicate', {'pages': [_current]});
+      case 'page.insert_blank':
+        return _viaTool('page_insert_blank', {'at': _current});
+    }
+
+    // Commands the engine can perform on its own, with no arguments beyond the document.
+    final tool = command.tool;
+    if (tool != null) return _viaTool(tool, {'doc': _doc});
+
+    return CommandResult(CommandOutcome.unsupported, '${command.label} ($id)');
+  }
+
+  /// The zoom that fits the page in the viewport, or its width.
+  double _fitScale({required bool whole}) {
+    final box = context.size;
+    if (box == null || _pageSize.width <= 0) return 1.0;
+    final byWidth = box.width / _pageSize.width;
+    if (!whole) return byWidth;
+    return byWidth < box.height / _pageSize.height ? byWidth : box.height / _pageSize.height;
+  }
+
+  CommandResult _viaTool(String tool, Map<String, dynamic> args) {
+    final doc = _doc;
+    if (doc == null) return const CommandResult(CommandOutcome.failed, 'no document');
+    try {
+      // Tools that change a document return its summary; the page count can have changed.
+      final summary = engine.call(tool, {...args, 'doc': doc});
+      final pages = summary['pages'];
+      if (pages is int && pages > 0) {
+        _pageCount = pages;
+        if (_current > pages) _current = pages;
+      }
+      _loadPage();
+      _refreshCommands();
+      // Keep the stale raster on screen until its replacement arrives, the way
+      // `crates/ui-egui/src/canvas.rs` does: clearing it makes the page blink empty on every
+      // edit, which is both ugly and a lie about what the document contains.
+      setState(() => _dirty = true);
+      _request();
+      return const CommandResult(CommandOutcome.done);
+    } on EngineError catch (e) {
+      setState(() => _status = e.message);
+      return CommandResult(CommandOutcome.failed, e.message);
+    }
+  }
+
   /// Set the status line (used by tests to exercise long text).
   void showStatus(String text) => setState(() => _status = text);
 
@@ -250,6 +373,15 @@ class ViewerPageState extends State<ViewerPage> {
   Widget build(BuildContext context) {
     final img = _pages[_current];
     return Scaffold(
+      key: scaffoldKey,
+      drawer: _CommandDrawer(
+        registry: _registry,
+        onRun: (id) async {
+          Navigator.of(context).pop();
+          final result = await runCommand(id);
+          if (!result.ok) showStatus(result.toString());
+        },
+      ),
       appBar: AppBar(
         title: Text('PdfCraft${_dirty ? ' •' : ''}'),
         actions: [
@@ -343,6 +475,48 @@ class ViewerPageState extends State<ViewerPage> {
             ),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// Menus built from the engine's command registry. Nothing here knows what any command means:
+/// the titles, the order, the labels, the shortcuts and the greyed-out state are all the
+/// engine's, so this shell and the egui one cannot drift apart.
+class _CommandDrawer extends StatelessWidget {
+  const _CommandDrawer({required this.registry, required this.onRun});
+
+  final CommandRegistry registry;
+  final Future<void> Function(String id) onRun;
+
+  @override
+  Widget build(BuildContext context) {
+    final menus = registry.menus;
+    return Drawer(
+      child: SafeArea(
+        child: menus.isEmpty
+            ? const Center(child: Text('No commands'))
+            : ListView(
+                children: [
+                  for (final menu in menus)
+                    ExpansionTile(
+                      key: ValueKey(menu),
+                      title: Text(menu),
+                      children: [
+                        for (final c in registry.inMenu(menu))
+                          ListTile(
+                            dense: true,
+                            enabled: c.enabled,
+                            title: Text(c.label),
+                            trailing: c.shortcut == null
+                                ? null
+                                : Text(c.shortcut!, style: Theme.of(context).textTheme.bodySmall),
+                            onTap: c.enabled ? () => onRun(c.id) : null,
+                          ),
+                      ],
+                    ),
+                ],
+              ),
       ),
     );
   }

@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:pdfcraft_flutter/src/engine.dart';
+import 'package:pdfcraft_flutter/src/commands.dart';
 import 'package:pdfcraft_flutter/src/viewer.dart';
 
 String? _lib() {
@@ -124,5 +125,30 @@ void main() {
     addTearDown(engine.close);
     expect(() => engine.call('no_such_tool'), throwsA(isA<EngineError>()));
     expect(() => engine.call('doc_info', {'doc': 999}), throwsA(isA<EngineError>()));
+  }, skip: lib == null ? reason : null);
+
+  test('the command registry is the engine\'s, and enablement needs the active document', () {
+    final engine = Engine.open();
+    addTearDown(engine.close);
+
+    // Without a document, everything that needs one is disabled.
+    final cold = CommandRegistry.load(engine);
+    expect(cold.all, isNotEmpty, reason: 'the registry is not empty');
+    expect(cold.menus, containsAll(<String>['File', 'Edit', 'View', 'Pages', 'Help']),
+        reason: 'menu titles come from the engine, not from Dart');
+    expect(cold.byId('page.duplicate')?.enabled, isFalse);
+
+    // With one, the page commands come alive. Passing the active document is what makes
+    // `is_enabled` meaningful; without it every Needs::Document command reports disabled.
+    final doc = engine.call('doc_create', {'from': 'text', 'text': 'Registry under test.'})['doc'] as int;
+    final warm = CommandRegistry.load(engine, doc: doc);
+    expect(warm.byId('page.duplicate')?.enabled, isTrue);
+    expect(warm.byId('page.rotate')?.enabled, isTrue);
+
+    // Labels and shortcuts are the engine's too.
+    expect(warm.byId('page.duplicate')?.label, 'Duplicate pages');
+    expect(warm.byId('bookmark.add')?.shortcut, isNotNull);
+    // And the link back to the tool that automates a command.
+    expect(warm.byId('edit.undo')?.tool, 'edit_undo');
   }, skip: lib == null ? reason : null);
 }

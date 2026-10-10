@@ -2,6 +2,7 @@
 // `flutter test --update-goldens test/viewer_test.dart` writes the images.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdfcraft_flutter/src/commands.dart';
 import 'package:pdfcraft_flutter/src/viewer.dart';
 
 void main() {
@@ -61,5 +62,31 @@ void main() {
     final next = tester.widget<IconButton>(find.widgetWithIcon(IconButton, Icons.chevron_right));
     expect(prev.onPressed, isNull);
     expect(next.onPressed, isNull);
+  });
+
+  testWidgets('an unknown command is reported, not silently ignored', (tester) async {
+    await tester.pumpWidget(const MaterialApp(debugShowCheckedModeBanner: false, home: ViewerPage(autoOpen: false)));
+    await tester.pumpAndSettle();
+    final state = tester.state<ViewerPageState>(find.byType(ViewerPage));
+
+    // A shell that does nothing is indistinguishable from a broken one, so every outcome is
+    // named. Without a loaded registry nothing resolves, which is itself the `unknown` answer.
+    final result = await state.runCommand('no.such.command');
+    expect(result.ok, isFalse);
+    expect(result.outcome, CommandOutcome.unknown);
+    expect(result.toString(), contains('no.such.command'));
+  });
+
+  testWidgets('the drawer is built from the registry, not from Dart', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(900, 650));
+    await tester.pumpWidget(const MaterialApp(debugShowCheckedModeBanner: false, home: ViewerPage(autoOpen: false)));
+    await tester.pumpAndSettle();
+    final state = tester.state<ViewerPageState>(find.byType(ViewerPage));
+
+    // With no engine the registry is empty, and the drawer says so rather than inventing menus.
+    expect(state.registry.menus, isEmpty);
+    state.scaffoldKey.currentState!.openDrawer();
+    await tester.pumpAndSettle();
+    expect(find.text('No commands'), findsOneWidget);
   });
 }
