@@ -145,11 +145,21 @@ impl Engine {
 /// A second frontend reads the shared catalogs in `pdfcraft-ui-common` through this rather than
 /// shipping its own copy of the strings and its own lookup; the egui shell reads the same files.
 /// One call at start-up is enough — the largest catalog is around 190 KB.
-pub fn catalog_json(language: &str) -> String {
-    use pdfcraft_ui_common::i18n::{Lang, catalog::parse_entries};
-    let Some(lang) = Lang::from_code(language) else {
-        return json!({ "ok": false, "error": format!("no such language: {language}") }).to_string();
+pub fn catalog_json(preference: &str) -> String {
+    use pdfcraft_ui_common::i18n::{AUTO, Lang, catalog::parse_entries, lang_from_tag, system_lang};
+
+    // Resolution stays in Rust, with the same rules the egui shell follows: a second frontend
+    // that re-implemented locale matching would drift from the first. A shell passes either a
+    // settled code ("ja"), the platform's locale tag ("zh-Hant-TW", "ja_JP.UTF-8"), or AUTO.
+    //
+    // It never fails: a phone set to a language we do not have shows English, and `requested`
+    // says what was asked for so a caller can tell the difference.
+    let lang = if preference.is_empty() || preference.eq_ignore_ascii_case(AUTO) {
+        system_lang()
+    } else {
+        Lang::from_code(preference).or_else(|| lang_from_tag(preference)).unwrap_or(Lang::EN)
     };
+
     let info = lang.info();
     let (entries, problems) = parse_entries(info.source, info.plural_forms());
     let mut map = serde_json::Map::new();
@@ -165,7 +175,20 @@ pub fn catalog_json(language: &str) -> String {
         };
         map.insert(key, Value::String(e.translation));
     }
-    json!({ "ok": true, "language": info.code, "name": lang.name(), "entries": map, "problems": problems }).to_string()
+
+    // The registry too, so a shell can offer a language picker without a second call.
+    let languages: Vec<Value> = Lang::all().map(|l| json!({ "code": l.code(), "name": l.name() })).collect();
+
+    json!({
+        "ok": true,
+        "requested": preference,
+        "language": info.code,
+        "name": lang.name(),
+        "entries": map,
+        "languages": languages,
+        "problems": problems,
+    })
+    .to_string()
 }
 
 /// A tool result as JSON. A PNG is base64'd because it is small and rare on this path; raw page

@@ -40,6 +40,7 @@ while [ $# -gt 0 ]; do
     --menu)    add "{\"menu\": $(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"; shift 2 ;;
     --goto)    add "{\"goto\": $2}"; shift 2 ;;
     --scroll)  add "{\"scroll\": $2}"; shift 2 ;;
+    --lang)    add "{\"lang\": \"$2\"}"; shift 2 ;;
     --submit)  add '{"submit": null}'; shift ;;
     --save)    add "{\"save\": $(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"; shift 2 ;;
     --inspect) add '{"inspect": null}'; shift ;;

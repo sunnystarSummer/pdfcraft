@@ -35,6 +35,10 @@ dependencies:
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   ffi: ^2.2.0
+  # Flutter's own strings (the drawer tooltip, date pickers) are Flutter's to translate; ours
+  # come from the shared catalogues in crates/ui-common.
+  flutter_localizations:
+    sdk: flutter
 
 dev_dependencies:
   flutter_test:

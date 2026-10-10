@@ -136,18 +136,22 @@ fn null_and_nonsense_pointers_are_rejected_rather_than_dereferenced() {
     }
 }
 
-#[test]
-fn the_shared_catalogue_comes_through_the_abi() {
+/// One catalogue request through the C ABI, as a shell makes it.
+fn catalogue(preference: &str) -> serde_json::Value {
     let mut len = 0usize;
-    let lang = "zh-hant";
     let text = unsafe {
-        let ptr = pdfcraft_ffi_catalog(lang.as_ptr(), lang.len(), &mut len);
+        let ptr = pdfcraft_ffi_catalog(preference.as_ptr(), preference.len(), &mut len);
         assert!(!ptr.is_null());
         let copied = std::slice::from_raw_parts(ptr, len).to_vec();
         pdfcraft_ffi_free(ptr, len);
         copied
     };
-    let reply: serde_json::Value = serde_json::from_slice(&text).expect("JSON");
+    serde_json::from_slice(&text).expect("JSON")
+}
+
+#[test]
+fn the_shared_catalogue_comes_through_the_abi() {
+    let reply = catalogue("zh-hant");
     assert_eq!(reply["ok"], true, "{reply}");
     assert_eq!(reply["language"], "zh-hant");
     assert_eq!(reply["name"], "繁體中文");
@@ -160,16 +164,34 @@ fn the_shared_catalogue_comes_through_the_abi() {
 }
 
 #[test]
-fn an_unknown_language_is_an_error_object() {
-    let mut len = 0usize;
-    let lang = "not-a-language";
-    let text = unsafe {
-        let ptr = pdfcraft_ffi_catalog(lang.as_ptr(), lang.len(), &mut len);
-        assert!(!ptr.is_null());
-        let copied = std::slice::from_raw_parts(ptr, len).to_vec();
-        pdfcraft_ffi_free(ptr, len);
-        copied
-    };
-    let reply: serde_json::Value = serde_json::from_slice(&text).expect("JSON");
-    assert_eq!(reply["ok"], false, "{reply}");
+fn a_locale_tag_resolves_the_way_the_egui_shell_resolves_it() {
+    // A shell passes the platform's locale tag, not a settled code, and the matching stays in
+    // Rust so the two frontends cannot drift.
+    for (tag, want) in [("zh-Hant-TW", "zh-hant"), ("ja_JP.UTF-8", "ja"), ("fr", "fr")] {
+        let reply = catalogue(tag);
+        assert_eq!(reply["ok"], true, "{reply}");
+        assert_eq!(reply["language"], want, "{tag} should resolve to {want}");
+        assert_eq!(reply["requested"], tag);
+    }
+}
+
+#[test]
+fn an_unsupported_language_falls_back_to_english_and_says_so() {
+    // A phone set to a language we do not have must show English, not fail to start. The reply
+    // still reports what was asked for, so a caller can tell a fallback from a match.
+    let reply = catalogue("xx-ZZ");
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["language"], "en");
+    assert_eq!(reply["requested"], "xx-ZZ");
+    assert!(reply["entries"].as_object().is_some_and(serde_json::Map::is_empty), "English has no catalogue");
+}
+
+#[test]
+fn the_language_registry_comes_back_for_a_picker() {
+    let reply = catalogue("ja");
+    let langs = reply["languages"].as_array().expect("languages");
+    assert!(langs.len() > 5, "only {} languages", langs.len());
+    assert!(langs.iter().any(|l| l["code"] == "en"));
+    let ja = langs.iter().find(|l| l["code"] == "ja").expect("ja listed");
+    assert_eq!(ja["name"], "日本語", "named in itself, for a picker");
 }

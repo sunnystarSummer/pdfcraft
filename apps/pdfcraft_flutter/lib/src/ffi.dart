@@ -61,6 +61,9 @@ typedef PdfReleaseC = Void Function(Pointer<Void>, Uint64);
 typedef PdfRelease = void Function(Pointer<Void>, int);
 typedef PdfCloseC = Void Function(Pointer<Void>);
 typedef PdfClose = void Function(Pointer<Void>);
+// The catalogue is not tied to an engine instance: it is static data the shells share.
+typedef PdfCatalogC = Pointer<Uint8> Function(Pointer<Uint8>, Size, Pointer<Size>);
+typedef PdfCatalog = Pointer<Uint8> Function(Pointer<Uint8>, int, Pointer<Size>);
 
 /// The loaded C ABI.
 class Native {
@@ -72,7 +75,8 @@ class Native {
         queue = _lib.lookupFunction<PdfQueueC, PdfQueue>('pdfcraft_ffi_queue'),
         poll = _lib.lookupFunction<PdfPollC, PdfPoll>('pdfcraft_ffi_poll'),
         release = _lib.lookupFunction<PdfReleaseC, PdfRelease>('pdfcraft_ffi_release'),
-        close = _lib.lookupFunction<PdfCloseC, PdfClose>('pdfcraft_ffi_close');
+        close = _lib.lookupFunction<PdfCloseC, PdfClose>('pdfcraft_ffi_close'),
+        catalog = _lib.lookupFunction<PdfCatalogC, PdfCatalog>('pdfcraft_ffi_catalog');
 
   // ignore: unused_field
   final DynamicLibrary _lib;
@@ -84,6 +88,7 @@ class Native {
   final PdfPoll poll;
   final PdfRelease release;
   final PdfClose close;
+  final PdfCatalog catalog;
 
   static Native? _instance;
 

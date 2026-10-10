@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'commands.dart';
 import 'engine.dart';
+import 'i18n.dart';
 import 'page_cache.dart';
 import 'search.dart';
 
@@ -671,13 +672,13 @@ class ViewerPageState extends State<ViewerPage> {
               leading: IconButton(
                 onPressed: clearSearch,
                 icon: const Icon(Icons.arrow_back),
-                tooltip: 'Close search',
+                tooltip: tl('Close'),
               ),
               title: TextField(
                 controller: _query,
                 autofocus: true,
                 textInputAction: TextInputAction.done,
-                decoration: const InputDecoration(hintText: 'Find in document', border: InputBorder.none),
+                decoration: InputDecoration(hintText: tl('Find text'), border: InputBorder.none),
                 onSubmitted: find,
               ),
               actions: [
@@ -685,12 +686,12 @@ class ViewerPageState extends State<ViewerPage> {
                 IconButton(
                   onPressed: _search.isEmpty ? null : () => stepMatch(-1),
                   icon: const Icon(Icons.keyboard_arrow_up),
-                  tooltip: 'Previous match',
+                  tooltip: tl('Previous match'),
                 ),
                 IconButton(
                   onPressed: _search.isEmpty ? null : () => stepMatch(1),
                   icon: const Icon(Icons.keyboard_arrow_down),
-                  tooltip: 'Next match',
+                  tooltip: tl('Next match'),
                 ),
               ],
             )
@@ -700,12 +701,12 @@ class ViewerPageState extends State<ViewerPage> {
                 IconButton(
                   onPressed: () => setState(() => _searching = true),
                   icon: const Icon(Icons.search),
-                  tooltip: 'Find',
+                  tooltip: tl('Find…'),
                 ),
-                IconButton(onPressed: () => setZoom(_zoom / 1.25), icon: const Icon(Icons.zoom_out), tooltip: 'Zoom out'),
+                IconButton(onPressed: () => setZoom(_zoom / 1.25), icon: const Icon(Icons.zoom_out), tooltip: tl('Zoom out')),
                 Center(child: Text('${(_zoom * 100).round()}%')),
-                IconButton(onPressed: () => setZoom(_zoom * 1.25), icon: const Icon(Icons.zoom_in), tooltip: 'Zoom in'),
-                IconButton(onPressed: addComment, icon: const Icon(Icons.add_comment), tooltip: 'Add comment'),
+                IconButton(onPressed: () => setZoom(_zoom * 1.25), icon: const Icon(Icons.zoom_in), tooltip: tl('Zoom in')),
+                IconButton(onPressed: addComment, icon: const Icon(Icons.add_comment), tooltip: tl('Add a sticky note')),
               ],
             ),
       body: Column(
@@ -742,13 +743,13 @@ class ViewerPageState extends State<ViewerPage> {
                 IconButton(
                   onPressed: _current > 1 ? () => goToPage(_current - 1) : null,
                   icon: const Icon(Icons.chevron_left),
-                  tooltip: 'Previous page',
+                  tooltip: tl('Previous page'),
                 ),
-                Text('Page $_current of $_pageCount'),
+                Text(fmt(tl('Page {p} of {n}'), {'p': '$_current', 'n': '$_pageCount'})),
                 IconButton(
                   onPressed: _current < _pageCount ? () => goToPage(_current + 1) : null,
                   icon: const Icon(Icons.chevron_right),
-                  tooltip: 'Next page',
+                  tooltip: tl('Next page'),
                 ),
                 const SizedBox(width: 8),
                 // The status carries selected text, which is arbitrarily long: it has to flex
@@ -786,7 +787,7 @@ class _CommandDrawer extends StatelessWidget {
     return Drawer(
       child: SafeArea(
         child: menus.isEmpty
-            ? const Center(child: Text('No commands'))
+            ? Center(child: Text(tl('No commands')))
             : ListView(
                 children: [
                   for (final menu in menus)

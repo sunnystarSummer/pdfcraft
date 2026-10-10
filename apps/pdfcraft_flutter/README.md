@@ -55,6 +55,18 @@ A query is capped at 500 matches: a single space in a long document would otherw
 
 Tap a line, then run `comment.highlight` (or `comment.note` for a sticky note). The geometry is the engine's: the rectangle `text_lines` reported for that line, turned into the four corners `comment_add` wants, so a highlight lands on the glyphs rather than on the shell's idea of where they are. The annotation is a real one in the document — the engine redraws the page with it, it is not an overlay — and it survives save and reopen, which `test/engine_test.dart` pins.
 
+## Language
+
+The shell shows the same strings the egui shell shows, from the same catalogues in `crates/ui-common/src/i18n`. It pulls one over the C ABI at start-up (`pdfcraft_ffi_catalog`, the largest catalogue is around 190 KB) rather than shipping a second copy of ~1,800 strings and a second lookup that would drift.
+
+**Which language a locale means is decided in Rust**, by the same `lang_from_tag` the egui shell uses, so `zh-Hant-TW` and `ja_JP.UTF-8` resolve identically in both. A locale with no catalogue shows English rather than failing, and the reply says what was asked for so a fallback can be told from a match.
+
+`lib/src/i18n.dart` gives `tl()`, `tlCtx()` and `fmt()`, the Dart answers to `tl!`, `tl_ctx!` and `i18n::fmt`. Placeholders are filled **by name**, because translators reorder them: "Page {p} of {n}" is "第 {p} 頁，共 {n} 頁" in Traditional Chinese and "ページ {p} / {n}" in Japanese.
+
+Flutter's own strings (the drawer tooltip, date pickers) are Flutter's to translate, through `flutter_localizations`, with its locale following the one our catalogue settled on.
+
+`test/i18n_test.dart` keeps this honest: every string the shell shows must be a key the catalogues know, or be listed in `notYetTranslated`. Without it, a typo in a `tl()` key shows in English and nothing says so.
+
 ## Looking at it (the agent loop)
 
 `CLAUDE.md` requires UI work to be looked at. The egui shell has `pdfcraft-cli ui --control FILE screenshot` and `cargo run -p pdfcraft-ui-egui --example shot`; this is the equivalent here, and it is headless too — no window, no display, a few seconds:
@@ -67,7 +79,7 @@ apps/pdfcraft_flutter/tool/shot.sh --out /tmp/shell.png \
   --inspect
 ```
 
-Verbs: `--open` a file, `--command <registry id>`, `--menu <title>` to open the command drawer and expand one menu, `--click <label>`, `--type <text>`, `--tap x,y`, `--scroll <pixels>` to drag the reader the way a finger would, `--goto <page>`, `--submit` for the Enter key, `--save <path>`, `--inspect` to print every label on screen plus the reader's own state (visible range, cached rasters, zoom), `--size 393x852` for a phone. `--script steps.json` takes the same steps as JSON, like `pdfcraft-cli run --script`.
+Verbs: `--open` a file, `--command <registry id>`, `--menu <title>` to open the command drawer and expand one menu, `--click <label>`, `--type <text>`, `--tap x,y`, `--scroll <pixels>` to drag the reader the way a finger would, `--goto <page>`, `--submit` for the Enter key, `--save <path>`, `--lang <code-or-tag>` to see the shell in any language, `--inspect` to print every label on screen plus the reader's own state (visible range, cached rasters, zoom), `--size 393x852` for a phone. `--script steps.json` takes the same steps as JSON, like `pdfcraft-cli run --script`.
 
 `--click` matches a control's text or, for icon buttons, its tooltip, so you do not have to know which it is. `--inspect` lists both (`label:` for text, `button:` for tooltips) and is how you find out what `--click` can target. A command that is greyed out does nothing when clicked, so if a click seems to be ignored, check that the engine thinks it is enabled — see below.
 

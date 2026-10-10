@@ -19,7 +19,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/material.dart';
+import 'package:flutter_localizations/flutter_localizations.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:pdfcraft_flutter/src/i18n.dart';
+
+import 'flutter_test_config.dart' show cjkFallback;
 import 'package:pdfcraft_flutter/src/viewer.dart';
 
 void main() {
@@ -30,8 +34,27 @@ void main() {
     final size = _size(Platform.environment['PDFCRAFT_SHOT_SIZE']);
     await tester.binding.setSurfaceSize(size);
 
+    // A real app settles its language before the first frame, and `MaterialApp` reads the locale
+    // when it is built, so a `lang` step is applied here rather than when it comes round in the
+    // loop. Otherwise Flutter's own strings would stay in the language the app started in.
+    for (final step in steps) {
+      if (step.containsKey('lang')) {
+        catalog = Catalog.load(step['lang'] as String);
+        break;
+      }
+    }
+
     await tester.pumpWidget(MaterialApp(
       debugShowCheckedModeBanner: false,
+      // Without this, a screenshot of the shell in Japanese or Chinese is a field of boxes.
+      theme: ThemeData(fontFamilyFallback: cjkFallback),
+      // The same localisation wiring as `lib/main.dart`, so a screenshot shows what a reader
+      // sees — including Flutter's own strings, which are Flutter's to translate.
+      locale: localeOf(catalog),
+      localizationsDelegates: GlobalMaterialLocalizations.delegates,
+      supportedLocales: catalog.languages.isEmpty
+          ? const [Locale('en')]
+          : [for (final l in catalog.languages) localeOf(Catalog(language: l.code, name: l.name, entries: const {}))],
       home: const ViewerPage(autoOpen: false),
     ));
     await tester.pumpAndSettle();
@@ -90,6 +113,12 @@ void main() {
           await tester.tapAt(Offset(xy[0].toDouble(), xy[1].toDouble()));
         case 'save':
           await state.save(arg as String);
+        case 'lang':
+          // Already applied before the app was built; this reports what it resolved to.
+          stderr.writeln('  language: ${catalog.language} (${catalog.name})'
+              '${catalog.isFallback ? ' — fallback, no catalogue for "${catalog.requested}"' : ''}');
+          state.showStatus(catalog.name);
+          await tester.pumpAndSettle();
         case 'inspect':
           stderr.writeln('  reader: ${state.readerStats}');
           for (final w in tester.widgetList<Text>(find.byType(Text))) {
