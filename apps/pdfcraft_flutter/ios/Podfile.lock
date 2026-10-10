@@ -1,0 +1,21 @@
+PODS:
+  - Flutter (1.0.0)
+  - pdfcraft_engine (0.4.0)
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - pdfcraft_engine (from `pdfcraft_engine`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  pdfcraft_engine:
+    :path: pdfcraft_engine
+
+SPEC CHECKSUMS:
+  Flutter: cabc95a1d2626b1b06e7179b784ebcf0c0cde467
+  pdfcraft_engine: 52e59a5524ccd707d078c414ad6802bf67a8c24d
+
+PODFILE CHECKSUM: 173ee78db317928af15dd438b28909246747e549
+
+COCOAPODS: 1.17.0

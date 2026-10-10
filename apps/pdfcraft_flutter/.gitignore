@@ -43,3 +43,6 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
+
+# The engine static library is built by tool/ios.sh, not committed (~71 MB).
+ios/pdfcraft_engine/lib/*.a
