@@ -1,0 +1,30 @@
+[package]
+name = "pdfcraft-ffi"
+description = "C ABI over the engine for non-Rust frontends (the Flutter shell); cdylib + staticlib"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lib]
+name = "pdfcraft_ffi"
+crate-type = ["cdylib", "staticlib", "rlib"]
+
+# This crate deliberately does NOT inherit `[lints] workspace = true`: the workspace forbids
+# `unsafe_code`, and a C ABI cannot be written without it (edition 2024 requires `unsafe extern`
+# and `#[unsafe(no_mangle)]`). The exemption is scoped to `src/abi.rs` and enforced by
+# `tests/no_unsafe_outside_abi.rs`. Everything else matches the workspace lints.
+[lints.rust]
+unsafe_code = "allow"
+
+[lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+
+[dependencies]
+pdfcraft-automation = { workspace = true }
+pdfcraft-engine = { workspace = true }
+pdfcraft-render = { workspace = true }
+serde_json = { workspace = true }
+base64 = "0.22"

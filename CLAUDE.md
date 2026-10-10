@@ -28,9 +28,14 @@ PdfCraft is a clean-room, open-source, Rust-native PDF application targeting Ado
   - Use checked or saturating arithmetic on input-derived numbers, and guard against division by zero and NaN/inf casts.
   - Cap allocations sized by input, and bound recursion with depth limits or seen-sets.
   - Handle lock poisoning.
-  - No `unsafe` (`unsafe_code = "forbid"`).
+  - No `unsafe` (`unsafe_code = "forbid"`). The sole exception is `apps/pdfcraft-ffi`, where a C
+    ABI makes it unavoidable: it is confined to `src/abi.rs`, every export is `catch_unwind`-wrapped
+    and null-checked, and `tests/no_unsafe_outside_abi.rs` keeps the exemption scoped.
   - Every crash fix gets a synthetic regression test. See `AGENTS.md` §4 (and, for team members, the internal `craftrules/standards/never-crash.md`).
-- **Rust only** in the product and build (`xtask`). No handwritten JS/TS.
+- **Rust only** in the product and build (`xtask`), with one exception: the Flutter shell for
+  iOS and Android (`apps/pdfcraft_flutter/`, over the C ABI in `apps/pdfcraft-ffi`) is written in
+  Dart, because egui cannot reach those platforms. Everything else stays Rust, and **no handwritten
+  JS/TS anywhere**. The desktop, web and FreeBSD builds stay on `pdfcraft-ui-egui`.
 - **Quality gates** before every commit: `cargo fmt --check`, `cargo clippy --workspace -- -D warnings`, `cargo test --workspace`, and the wasm check once `xtask ci` exists (M0).
 - **Commits:** one task id per commit (e.g. `M1.4: xref stream reader`). Commit only green states. End messages with the attribution line required by the environment.
 

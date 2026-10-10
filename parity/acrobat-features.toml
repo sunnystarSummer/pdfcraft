@@ -9342,6 +9342,18 @@ evidence = ["crates/automation/tests/automation.rs::mcp_session_over_stdio", "cr
 notes = ""
 
 [[feature]]
+id = "misc.ffi-abi"
+title = "C ABI over the engine for non-Rust frontends"
+area = "N"
+tier = "P1"
+milestone = "M13"
+status = "partial"
+commands = []
+tools = []
+evidence = ["apps/pdfcraft-ffi/tests/abi.rs::a_tool_call_round_trips_as_json", "apps/pdfcraft-ffi/tests/abi.rs::a_queued_page_comes_back_as_premultiplied_rgba", "apps/pdfcraft-ffi/tests/no_unsafe_outside_abi.rs::unsafe_appears_only_in_the_abi_module"]
+notes = "Control forwards to the automation tool table; pixels go out as borrowed premultiplied RGBA8 from the document's RenderPool. Missing: text/selection geometry over the ABI, change notifications, and a frontend that consumes it."
+
+[[feature]]
 id = "misc.automation-root-confinement"
 title = "Confine automation file access to a root directory"
 area = "N"

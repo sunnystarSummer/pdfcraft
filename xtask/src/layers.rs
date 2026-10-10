@@ -87,6 +87,10 @@ pub const TABLE: &[(&str, Class)] = &[
     ("pdfcraft", Class::Exempt),
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
+    // The C ABI for non-Rust frontends. Exempt like the other shipped artefacts: it is a
+    // cdylib/staticlib, not a layered library, and it is the one crate that may use `unsafe`
+    // (scoped to `src/abi.rs`, enforced by its own test).
+    ("ffi", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 
