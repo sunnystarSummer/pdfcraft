@@ -71,6 +71,7 @@ class _BenchState extends State<_Bench> {
 
     // ---- tile-to-glass: request one page, wait until it is painted ----
     final glass = <int>[];
+    final render = <int>[];
     for (var i = 0; i < 24; i++) {
       final page = 10 + i;
       final sw = Stopwatch()..start();
@@ -78,16 +79,19 @@ class _BenchState extends State<_Bench> {
       PageRaster? got;
       while (got == null) {
         got = await _drain(doc);
-        if (got == null) await Future<void>.delayed(const Duration(microseconds: 500));
+        if (got == null) await Future<void>.delayed(Duration.zero);
       }
       setState(() => _shown = got!.image);
       await _nextFrame();
       sw.stop();
       glass.add(sw.elapsedMicroseconds);
+      render.add(got.renderMillis * 1000);
       got.image.dispose();
     }
     glass.sort();
-    stderr.writeln('TILE-TO-GLASS  p50 ${_ms(glass, 50)}  p95 ${_ms(glass, 95)}');
+    render.sort();
+    stderr.writeln('ENGINE RENDER  p50 ${_ms(render, 50)}  p95 ${_ms(render, 95)}   (engine pool, reported per tile)');
+    stderr.writeln('TILE-TO-GLASS  p50 ${_ms(glass, 50)}  p95 ${_ms(glass, 95)}   (request -> painted)');
 
     // ---- sustained scroll ----
     setState(() => _status = 'scroll');

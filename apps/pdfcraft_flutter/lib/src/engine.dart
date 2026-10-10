@@ -3,7 +3,6 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:ffi';
-import 'dart:typed_data';
 import 'dart:ui' as ui;
 
 import 'package:ffi/ffi.dart' as pkgffi;
@@ -20,10 +19,14 @@ class EngineError implements Exception {
 
 /// One page raster, decoded and ready to paint.
 class PageRaster {
-  PageRaster(this.page, this.tag, this.image);
+  PageRaster(this.page, this.tag, this.image, this.renderMillis);
   final int page;
   final int tag;
   final ui.Image image;
+
+  /// How long the engine's render pool spent rasterising this page. Useful for telling engine
+  /// cost apart from transport and compositing cost.
+  final int renderMillis;
 }
 
 class Engine {
@@ -112,11 +115,13 @@ class Engine {
     final id = t.id;
     try {
       if (t.ok == 0) return null;
-      // Copy before releasing: the decode is asynchronous and the engine owns that memory.
-      final pixels = Uint8List.fromList(ptr.asTypedList(t.len));
+      // No copy: `asTypedList` is a view straight onto the engine's pixels, and the release in
+      // the `finally` below runs only after the decode has completed, so the buffer stays alive
+      // for exactly as long as it is read. Copying first cost a full 8 MB memcpy per tile at
+      // 150 dpi plus the GC that followed.
       final completer = Completer<ui.Image>();
-      ui.decodeImageFromPixels(pixels, t.width, t.height, ui.PixelFormat.rgba8888, completer.complete);
-      return PageRaster(t.page, t.tag, await completer.future);
+      ui.decodeImageFromPixels(ptr.asTypedList(t.len), t.width, t.height, ui.PixelFormat.rgba8888, completer.complete);
+      return PageRaster(t.page, t.tag, await completer.future, t.millis);
     } finally {
       _native.release(_ctx, id);
     }
