@@ -88,6 +88,8 @@ void main() {
         case 'tap':
           final xy = (arg as List).cast<num>();
           await tester.tapAt(Offset(xy[0].toDouble(), xy[1].toDouble()));
+        case 'save':
+          await state.save(arg as String);
         case 'inspect':
           stderr.writeln('  reader: ${state.readerStats}');
           for (final w in tester.widgetList<Text>(find.byType(Text))) {

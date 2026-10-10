@@ -399,6 +399,8 @@ class ViewerPageState extends State<ViewerPage> {
       case 'comment.note':
         await addComment();
         return const CommandResult(CommandOutcome.done);
+      case 'comment.highlight':
+        return highlightSelection();
 
       // Commands whose tool needs arguments the registry does not carry. The egui shell asks
       // the user (a dialog, a selection); on mobile these act on the page in view.
@@ -444,8 +446,11 @@ class ViewerPageState extends State<ViewerPage> {
       // Keep the stale raster on screen until its replacement arrives, the way
       // `crates/ui-egui/src/canvas.rs` does: clearing it makes the page blink empty on every
       // edit, which is both ugly and a lie about what the document contains.
+      //
+      // `force`, because after an edit what we hold is out of date but `wanted` would see a
+      // page already in the cache and ask for nothing — the edit would never appear.
       setState(() => _dirty = true);
-      _request();
+      _request(force: true);
       return const CommandResult(CommandOutcome.done);
     } on EngineError catch (e) {
       setState(() => _status = e.message);
@@ -559,6 +564,28 @@ class ViewerPageState extends State<ViewerPage> {
         ),
       ),
     );
+  }
+
+  /// Highlight the selected line.
+  ///
+  /// The engine wants quads in view space, four corners each (upper-left, upper-right,
+  /// lower-left, lower-right). The rectangle is the one `text_lines` gave us, so the highlight
+  /// lands exactly on the glyphs rather than on the shell's idea of where they are.
+  CommandResult highlightSelection() {
+    final doc = _doc;
+    if (doc == null) return const CommandResult(CommandOutcome.failed, 'no document');
+    if (_selected < 0 || _selected >= _lines.length) {
+      return const CommandResult(CommandOutcome.failed, 'select a line first');
+    }
+    final r = _lines[_selected].rect;
+    return _viaTool('comment_add', {
+      'page': _current,
+      'type': 'highlight',
+      'color': 'yellow',
+      'quads': [
+        [r.left, r.top, r.right, r.top, r.left, r.bottom, r.right, r.bottom],
+      ],
+    });
   }
 
   SearchState get search => _search;

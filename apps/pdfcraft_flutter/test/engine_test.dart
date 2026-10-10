@@ -151,4 +151,50 @@ void main() {
     // And the link back to the tool that automates a command.
     expect(warm.byId('edit.undo')?.tool, 'edit_undo');
   }, skip: lib == null ? reason : null);
+
+  test('a highlight placed on a selected line survives save and reopen', () {
+    final dir = Directory.systemTemp.createTempSync('pdfcraft-flutter-hl-');
+    final engine = Engine.open(root: dir.path);
+    addTearDown(() {
+      engine.close();
+      dir.deleteSync(recursive: true);
+    });
+
+    final doc = engine.call('doc_create', {
+      'from': 'text',
+      'text': 'First line to mark.\n\nSecond line, left alone.',
+    })['doc'] as int;
+
+    // The geometry is the engine's own: the line rectangle `text_lines` reports, turned into
+    // the four corners `comment_add` wants. The shell never invents a position.
+    final lines = (engine.call('text_lines', {'doc': doc, 'page': 1})['lines'] as List)
+        .map((l) => TextLine.fromJson(l as Map<String, dynamic>))
+        .toList();
+    expect(lines, isNotEmpty);
+    final r = lines.first.rect;
+    engine.call('comment_add', {
+      'doc': doc,
+      'page': 1,
+      'type': 'highlight',
+      'color': 'yellow',
+      'quads': [
+        [r.left, r.top, r.right, r.top, r.left, r.bottom, r.right, r.bottom],
+      ],
+    });
+
+    engine.call('doc_save', {'doc': doc, 'path': 'marked.pdf'});
+    engine.call('doc_close', {'doc': doc});
+
+    final reopened = engine.call('doc_open', {'path': 'marked.pdf'})['doc'] as int;
+    final comments = engine.call('comment_list', {'doc': reopened})['comments'] as List;
+    expect(comments.length, 1, reason: 'the highlight is in the saved file');
+    final saved = comments.single as Map<String, dynamic>;
+    expect(saved['type'], 'Highlight');
+
+    // And it is where the line was, not somewhere else on the page.
+    final rect = (saved['rect'] as List).cast<num>();
+    expect(rect[0], closeTo(r.left, 0.5));
+    expect(rect[1], closeTo(r.top, 0.5));
+    expect(rect[3], closeTo(r.bottom, 0.5));
+  }, skip: lib == null ? reason : null);
 }
