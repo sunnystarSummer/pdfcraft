@@ -3619,6 +3619,7 @@ dependencies = [
  "pdfcraft-automation",
  "pdfcraft-engine",
  "pdfcraft-render",
+ "pdfcraft-ui-common",
  "serde_json",
 ]
 
@@ -3792,6 +3793,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "pdfcraft-ui-common"
+version = "0.4.0"
+dependencies = [
+ "log",
+ "pdfcraft-engine",
+ "pdfcraft-fonts",
+ "serde_json",
+]
+
+[[package]]
 name = "pdfcraft-ui-egui"
 version = "0.4.0"
 dependencies = [
@@ -3814,6 +3825,7 @@ dependencies = [
  "pdfcraft-model",
  "pdfcraft-platform",
  "pdfcraft-render",
+ "pdfcraft-ui-common",
  "pdfcraft-xfa",
  "png 0.18.1",
  "pollster 1.0.1",

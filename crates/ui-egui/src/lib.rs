@@ -22,6 +22,13 @@ macro_rules! tl_ctx {
     };
 }
 
+/// Localisation lives in `pdfcraft-ui-common` so the Flutter shell reads the same catalogs.
+/// Re-exported here so every `tl!`/`tl_ctx!` call site and `crate::i18n::…` path is unchanged.
+pub use pdfcraft_ui_common::i18n;
+
+#[cfg(test)]
+mod i18n_tests;
+
 mod a11y_ui;
 mod actions_ui;
 pub mod canvas;
@@ -83,7 +90,6 @@ mod signature_drag;
 pub use print_ui::{Handling as PrintHandling, PrintDraft, Which as PrintWhich};
 mod redact_ui;
 pub use redact_ui::{HiddenDraft, PagesDraft as RedactPagesDraft, RedactPrefs, SearchDraft as RedactSearchDraft};
-pub mod i18n;
 
 /// The longest author name kept (Preferences ▸ Identity, restored settings).
 pub(crate) const MAX_AUTHOR_CHARS: usize = 200;

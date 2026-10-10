@@ -140,6 +140,34 @@ impl Engine {
     }
 }
 
+/// Every translation for one language, as `{"language", "name", "entries": {english: text}}`.
+///
+/// A second frontend reads the shared catalogs in `pdfcraft-ui-common` through this rather than
+/// shipping its own copy of the strings and its own lookup; the egui shell reads the same files.
+/// One call at start-up is enough — the largest catalog is around 190 KB.
+pub fn catalog_json(language: &str) -> String {
+    use pdfcraft_ui_common::i18n::{Lang, catalog::parse_entries};
+    let Some(lang) = Lang::from_code(language) else {
+        return json!({ "ok": false, "error": format!("no such language: {language}") }).to_string();
+    };
+    let info = lang.info();
+    let (entries, problems) = parse_entries(info.source, info.plural_forms());
+    let mut map = serde_json::Map::new();
+    for e in entries {
+        // Contextual entries are keyed context + U+0004 + source, as the lookup keys them.
+        let key = if e.context.is_empty() {
+            e.source
+        } else {
+            let mut k = e.context;
+            k.push('\u{4}');
+            k.push_str(&e.source);
+            k
+        };
+        map.insert(key, Value::String(e.translation));
+    }
+    json!({ "ok": true, "language": info.code, "name": lang.name(), "entries": map, "problems": problems }).to_string()
+}
+
 /// A tool result as JSON. A PNG is base64'd because it is small and rare on this path; raw page
 /// rasters never come through here — they go out as borrowed pixels instead.
 fn encode(c: Content) -> Value {

@@ -10,6 +10,7 @@ workspace = true
 
 [dependencies]
 pdfcraft-fonts = { workspace = true }
+pdfcraft-ui-common = { workspace = true }
 pdfcraft-engine = { workspace = true }
 pdfcraft-render = { workspace = true }
 pdfcraft-platform = { workspace = true }

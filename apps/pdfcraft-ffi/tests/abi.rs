@@ -135,3 +135,41 @@ fn null_and_nonsense_pointers_are_rejected_rather_than_dereferenced() {
         pdfcraft_ffi_close(engine);
     }
 }
+
+#[test]
+fn the_shared_catalogue_comes_through_the_abi() {
+    let mut len = 0usize;
+    let lang = "zh-hant";
+    let text = unsafe {
+        let ptr = pdfcraft_ffi_catalog(lang.as_ptr(), lang.len(), &mut len);
+        assert!(!ptr.is_null());
+        let copied = std::slice::from_raw_parts(ptr, len).to_vec();
+        pdfcraft_ffi_free(ptr, len);
+        copied
+    };
+    let reply: serde_json::Value = serde_json::from_slice(&text).expect("JSON");
+    assert_eq!(reply["ok"], true, "{reply}");
+    assert_eq!(reply["language"], "zh-hant");
+    assert_eq!(reply["name"], "繁體中文");
+
+    let entries = reply["entries"].as_object().expect("entries");
+    assert!(entries.len() > 500, "only {} entries", entries.len());
+    // The same strings the egui shell shows, not a second copy maintained in Dart.
+    assert_eq!(entries.get("File").and_then(|v| v.as_str()), Some("檔案"));
+    assert!(reply["problems"].as_array().is_some_and(Vec::is_empty), "catalogue has parse problems: {reply}");
+}
+
+#[test]
+fn an_unknown_language_is_an_error_object() {
+    let mut len = 0usize;
+    let lang = "not-a-language";
+    let text = unsafe {
+        let ptr = pdfcraft_ffi_catalog(lang.as_ptr(), lang.len(), &mut len);
+        assert!(!ptr.is_null());
+        let copied = std::slice::from_raw_parts(ptr, len).to_vec();
+        pdfcraft_ffi_free(ptr, len);
+        copied
+    };
+    let reply: serde_json::Value = serde_json::from_slice(&text).expect("JSON");
+    assert_eq!(reply["ok"], false, "{reply}");
+}

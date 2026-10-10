@@ -121,6 +121,29 @@ pub unsafe extern "C" fn pdfcraft_ffi_free(ptr: *mut u8, len: usize) {
     }));
 }
 
+/// Every translation for one language as UTF-8 JSON (see [`crate::catalog_json`]). Returns a
+/// freshly allocated buffer and writes its length to `out_len`; free it with
+/// [`pdfcraft_ffi_free`]. Null only when the arguments are unusable.
+///
+/// # Safety
+/// `language` must point to `len` readable bytes and `out_len` to a writable `usize`.
+#[unsafe(no_mangle)]
+pub unsafe extern "C" fn pdfcraft_ffi_catalog(language: *const u8, len: usize, out_len: *mut usize) -> *mut u8 {
+    if language.is_null() || out_len.is_null() {
+        return std::ptr::null_mut();
+    }
+    catch_unwind(AssertUnwindSafe(|| {
+        let bytes = unsafe { std::slice::from_raw_parts(language, len) };
+        let text = std::str::from_utf8(bytes).unwrap_or("");
+        let mut boxed = crate::catalog_json(text).into_bytes().into_boxed_slice();
+        let (ptr, out) = (boxed.as_mut_ptr(), boxed.len());
+        std::mem::forget(boxed);
+        unsafe { *out_len = out };
+        ptr
+    }))
+    .unwrap_or(std::ptr::null_mut())
+}
+
 /// Replace document `doc`'s pending raster queue with `count` requests. Returns 0 on success.
 /// # Safety
 /// `engine` must be open, and `reqs` must point to `count` readable [`CReq`] values.

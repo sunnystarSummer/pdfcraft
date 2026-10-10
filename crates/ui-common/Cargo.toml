@@ -1,0 +1,23 @@
+[package]
+name = "pdfcraft-ui-common"
+description = "Frontend-agnostic UI support shared by the egui shell and the Flutter shell"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+
+[lints]
+workspace = true
+
+[dependencies]
+# A malformed catalog line is reported and skipped, never fatal.
+log = { workspace = true }
+
+[dev-dependencies]
+# Coverage tests check every command label and tool-group title has a translation, and that the
+# Japanese catalogs render with the fonts we ship. Dev-only: the crate itself stays std-only.
+pdfcraft-engine = { workspace = true }
+pdfcraft-fonts = { workspace = true }
+# A catalog test reads the contributors manifest.
+serde_json = { workspace = true }

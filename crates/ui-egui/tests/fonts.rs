@@ -170,11 +170,11 @@ fn primary_ui_fonts_cover_latin_and_cyrillic_catalogs() {
     use skrifa::MetadataProvider as _;
     let defs = theme::font_definitions();
     for (code, catalog) in [
-        ("cs", include_str!("../src/i18n/cs.tsv")),
-        ("pt-br", include_str!("../src/i18n/pt-br.tsv")),
-        ("es", include_str!("../src/i18n/es.tsv")),
-        ("fr", include_str!("../src/i18n/fr.tsv")),
-        ("ru", include_str!("../src/i18n/ru.tsv")),
+        ("cs", include_str!("../../ui-common/src/i18n/cs.tsv")),
+        ("pt-br", include_str!("../../ui-common/src/i18n/pt-br.tsv")),
+        ("es", include_str!("../../ui-common/src/i18n/es.tsv")),
+        ("fr", include_str!("../../ui-common/src/i18n/fr.tsv")),
+        ("ru", include_str!("../../ui-common/src/i18n/ru.tsv")),
     ] {
         let mut text = String::from("áčďéěíňóřšťúůýžÁČĎÉĚÍŇÓŘŠŤÚŮÝŽãõçâêôàÃÕÇÂÊÔÀñÑüÜ¿¡«»…");
         for line in catalog.lines().filter(|l| !l.starts_with('#')) {
