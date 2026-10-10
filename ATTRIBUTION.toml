@@ -3103,7 +3103,7 @@ licence = "MIT OR Apache-2.0"
 licence_file = "LICENSE-MIT"
 kind = "image"
 usage = "Golden baseline for the Flutter shell's chrome. Shows only PdfCraft UI and Material icons; this is also the agent-visible screenshot for UI work on that shell (CLAUDE.md)"
-sha256 = "7a79a54738b218d966fdb99d4d1cb2fe85def57d99eab6d9e3fcf61d111f8bb8"
+sha256 = "b55eb65e54612f5ee77a814f53f59a486ebaa26d5bbeaabca110ea685ceb313c"
 
 [[asset]]
 path = "docs/images/pdfcraft-bookmarks.png"

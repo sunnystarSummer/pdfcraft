@@ -7,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'commands.dart';
 import 'engine.dart';
 import 'page_cache.dart';
+import 'search.dart';
 
 /// One line of page text with its view-space rectangle (origin top-left, PDF points).
 class TextLine {
@@ -27,30 +28,56 @@ class TextLine {
 /// Draws the selection over the page raster. Rectangles arrive in view-space points and are
 /// scaled to the rendered size, so the overlay follows zoom without recomputing geometry.
 class _SelectionPainter extends CustomPainter {
-  const _SelectionPainter(this.rect, this.pageSize);
+  const _SelectionPainter({required this.selection, required this.hits, required this.pageSize});
 
-  final Rect? rect;
+  /// The selected line, in view-space points.
+  final Rect? selection;
+
+  /// Search hits on this page, with a flag for the one the reader is standing on.
+  final List<(Rect, bool)> hits;
+
   final Size pageSize;
 
   @override
   void paint(Canvas canvas, Size size) {
-    final r = rect;
-    if (r == null || pageSize.width <= 0 || pageSize.height <= 0) return;
+    if (pageSize.width <= 0 || pageSize.height <= 0) return;
+    // View-space points -> the rendered size, so the overlay follows zoom without recomputing
+    // any geometry: the rectangles are the engine's.
     final sx = size.width / pageSize.width;
     final sy = size.height / pageSize.height;
-    final scaled = Rect.fromLTRB(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy);
-    canvas.drawRect(scaled.inflate(1), Paint()..color = const Color(0x553B82F6));
-    canvas.drawRect(
-      scaled.inflate(1),
-      Paint()
-        ..style = PaintingStyle.stroke
-        ..strokeWidth = 1
-        ..color = const Color(0xAA3B82F6),
-    );
+    Rect scaled(Rect r) => Rect.fromLTRB(r.left * sx, r.top * sy, r.right * sx, r.bottom * sy);
+
+    for (final (rect, isCurrent) in hits) {
+      final box = scaled(rect).inflate(1);
+      canvas.drawRect(box, Paint()..color = isCurrent ? const Color(0x99FFC107) : const Color(0x55FFE082));
+      if (isCurrent) {
+        canvas.drawRect(
+          box,
+          Paint()
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 1.5
+            ..color = const Color(0xCCFF8F00),
+        );
+      }
+    }
+
+    final r = selection;
+    if (r != null) {
+      final box = scaled(r).inflate(1);
+      canvas.drawRect(box, Paint()..color = const Color(0x553B82F6));
+      canvas.drawRect(
+        box,
+        Paint()
+          ..style = PaintingStyle.stroke
+          ..strokeWidth = 1
+          ..color = const Color(0xAA3B82F6),
+      );
+    }
   }
 
   @override
-  bool shouldRepaint(_SelectionPainter old) => old.rect != rect || old.pageSize != pageSize;
+  bool shouldRepaint(_SelectionPainter old) =>
+      old.selection != selection || old.pageSize != pageSize || old.hits.length != hits.length || old.hits != hits;
 }
 
 /// Scale bits in a raster's tag, mirroring the conventions in
@@ -110,6 +137,11 @@ class ViewerPageState extends State<ViewerPage> {
   /// The engine's command registry. Menus, labels, shortcuts and enablement all come from here.
   CommandRegistry _registry = CommandRegistry.empty;
 
+  /// The current search. Hits are painted on every page that has them, not just the one in view.
+  SearchState _search = const SearchState();
+  bool _searching = false;
+  final TextEditingController _query = TextEditingController();
+
   @override
   void initState() {
     super.initState();
@@ -122,6 +154,7 @@ class ViewerPageState extends State<ViewerPage> {
   @override
   void dispose() {
     _pump?.cancel();
+    _query.dispose();
     _scroll.dispose();
     _cache.clear();
     if (widget.engine == null) _engine?.close();
@@ -511,19 +544,67 @@ class ViewerPageState extends State<ViewerPage> {
                     fit: StackFit.expand,
                     children: [
                       RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.medium),
-                      if (page == _current)
-                        CustomPaint(
-                          painter: _SelectionPainter(
-                            _selected >= 0 && _selected < _lines.length ? _lines[_selected].rect : null,
-                            size,
-                          ),
+                      CustomPaint(
+                        painter: _SelectionPainter(
+                          selection: page == _current && _selected >= 0 && _selected < _lines.length
+                              ? _lines[_selected].rect
+                              : null,
+                          hits: _search.rectsOn(page),
+                          pageSize: size,
                         ),
+                      ),
                     ],
                   ),
           ),
         ),
       ),
     );
+  }
+
+  SearchState get search => _search;
+
+  /// Run a search and go to the first hit.
+  void find(String query) {
+    final doc = _doc;
+    if (doc == null) return;
+    try {
+      setState(() => _search = SearchState.run(engine, doc, query));
+      if (_search.current != null) _showMatch();
+      showStatus(_search.label);
+    } on EngineError catch (e) {
+      setState(() => _status = e.message);
+    }
+  }
+
+  /// Step to the next or previous hit, wrapping at the ends.
+  void stepMatch(int by) {
+    if (_search.isEmpty) return;
+    setState(() => _search = _search.step(by));
+    _showMatch();
+    showStatus(_search.label);
+  }
+
+  void clearSearch() {
+    _query.clear();
+    setState(() {
+      _search = const SearchState();
+      _searching = false;
+      _status = 'ready';
+    });
+  }
+
+  /// Scroll so the current hit is in view, a third of the way down, where the eye expects it.
+  void _showMatch() {
+    final match = _search.current;
+    if (match == null || !_scroll.hasClients) return;
+    var y = _gap;
+    for (var p = 1; p < match.page; p++) {
+      y += _slotHeight(p);
+    }
+    final within = match.rects.isEmpty ? 0.0 : match.rects.first.top * _zoom;
+    final viewport = _scroll.position.viewportDimension;
+    final target = (y + within - viewport / 3).clamp(0.0, _scroll.position.maxScrollExtent);
+    _scroll.jumpTo(target);
   }
 
   /// Set the status line (used by tests to exercise long text).
@@ -558,15 +639,48 @@ class ViewerPageState extends State<ViewerPage> {
           if (!result.ok) showStatus(result.toString());
         },
       ),
-      appBar: AppBar(
-        title: Text('PdfCraft${_dirty ? ' •' : ''}'),
-        actions: [
-          IconButton(onPressed: () => setZoom(_zoom / 1.25), icon: const Icon(Icons.zoom_out), tooltip: 'Zoom out'),
-          Center(child: Text('${(_zoom * 100).round()}%')),
-          IconButton(onPressed: () => setZoom(_zoom * 1.25), icon: const Icon(Icons.zoom_in), tooltip: 'Zoom in'),
-          IconButton(onPressed: addComment, icon: const Icon(Icons.add_comment), tooltip: 'Add comment'),
-        ],
-      ),
+      appBar: _searching
+          ? AppBar(
+              leading: IconButton(
+                onPressed: clearSearch,
+                icon: const Icon(Icons.arrow_back),
+                tooltip: 'Close search',
+              ),
+              title: TextField(
+                controller: _query,
+                autofocus: true,
+                textInputAction: TextInputAction.done,
+                decoration: const InputDecoration(hintText: 'Find in document', border: InputBorder.none),
+                onSubmitted: find,
+              ),
+              actions: [
+                Center(child: Text(_search.label)),
+                IconButton(
+                  onPressed: _search.isEmpty ? null : () => stepMatch(-1),
+                  icon: const Icon(Icons.keyboard_arrow_up),
+                  tooltip: 'Previous match',
+                ),
+                IconButton(
+                  onPressed: _search.isEmpty ? null : () => stepMatch(1),
+                  icon: const Icon(Icons.keyboard_arrow_down),
+                  tooltip: 'Next match',
+                ),
+              ],
+            )
+          : AppBar(
+              title: Text('PdfCraft${_dirty ? ' •' : ''}'),
+              actions: [
+                IconButton(
+                  onPressed: () => setState(() => _searching = true),
+                  icon: const Icon(Icons.search),
+                  tooltip: 'Find',
+                ),
+                IconButton(onPressed: () => setZoom(_zoom / 1.25), icon: const Icon(Icons.zoom_out), tooltip: 'Zoom out'),
+                Center(child: Text('${(_zoom * 100).round()}%')),
+                IconButton(onPressed: () => setZoom(_zoom * 1.25), icon: const Icon(Icons.zoom_in), tooltip: 'Zoom in'),
+                IconButton(onPressed: addComment, icon: const Icon(Icons.add_comment), tooltip: 'Add comment'),
+              ],
+            ),
       body: Column(
         children: [
           Expanded(

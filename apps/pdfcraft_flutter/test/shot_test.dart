@@ -72,11 +72,19 @@ void main() {
           await tester.pumpAndSettle();
           await _settleRasters(tester);
         case 'click':
-          final target = find.text(arg as String);
-          expect(target, findsWidgets, reason: 'no control labelled "$arg"');
+          // A control is "labelled" by its text or, for icon buttons, by its tooltip. An agent
+          // should not have to know which, so try text and fall back to the tooltip.
+          var target = find.text(arg as String);
+          if (target.evaluate().isEmpty) target = find.byTooltip(arg);
+          expect(target, findsWidgets, reason: 'nothing labelled "$arg" (try --inspect)');
           await tester.tap(target.first);
         case 'type':
           await tester.enterText(find.byType(TextField).first, arg as String);
+        case 'submit':
+          // The Enter key, as the platform delivers it: what a field's onSubmitted waits for.
+          await tester.testTextInput.receiveAction(TextInputAction.done);
+          await tester.pumpAndSettle();
+          await _settleRasters(tester);
         case 'tap':
           final xy = (arg as List).cast<num>();
           await tester.tapAt(Offset(xy[0].toDouble(), xy[1].toDouble()));
@@ -84,6 +92,11 @@ void main() {
           stderr.writeln('  reader: ${state.readerStats}');
           for (final w in tester.widgetList<Text>(find.byType(Text))) {
             if ((w.data ?? '').trim().isNotEmpty) stderr.writeln('  label: ${w.data}');
+          }
+          // Icon buttons carry their label as a tooltip; without these an agent cannot see
+          // half the controls on screen.
+          for (final w in tester.widgetList<Tooltip>(find.byType(Tooltip))) {
+            if ((w.message ?? '').trim().isNotEmpty) stderr.writeln('  button: ${w.message}');
           }
         case 'shot':
           // Let anything still rendering land, so a shot is never of a half-drawn viewport.

@@ -45,6 +45,12 @@ Three properties are worth stating because they are what make a long document us
 
 Pages in one document need not be the same size, so the reader reads every page's box from `doc_info` rather than assuming one geometry.
 
+## Finding text
+
+`text_find` does the work and reports view-space rectangles, the same convention as `text_lines`, so the shell only scales them to the rendered size — it never re-derives where a word sits on a page. Hits are painted on every page that has them, not only the one in view, and the current one is drawn differently from the rest. Stepping wraps at both ends, and going to a hit puts it a third of the way down the viewport rather than at the very top, where the eye would miss it.
+
+A query is capped at 500 matches: a single space in a long document would otherwise return tens of thousands of rectangles to paint.
+
 ## Looking at it (the agent loop)
 
 `CLAUDE.md` requires UI work to be looked at. The egui shell has `pdfcraft-cli ui --control FILE screenshot` and `cargo run -p pdfcraft-ui-egui --example shot`; this is the equivalent here, and it is headless too — no window, no display, a few seconds:
@@ -57,9 +63,9 @@ apps/pdfcraft_flutter/tool/shot.sh --out /tmp/shell.png \
   --inspect
 ```
 
-Verbs: `--open` a file, `--command <registry id>`, `--menu <title>` to open the command drawer and expand one menu, `--click <label>`, `--type <text>`, `--tap x,y`, `--scroll <pixels>` to drag the reader the way a finger would, `--goto <page>`, `--inspect` to print every label on screen plus the reader's own state (visible range, cached rasters, zoom), `--size 393x852` for a phone. `--script steps.json` takes the same steps as JSON, like `pdfcraft-cli run --script`.
+Verbs: `--open` a file, `--command <registry id>`, `--menu <title>` to open the command drawer and expand one menu, `--click <label>`, `--type <text>`, `--tap x,y`, `--scroll <pixels>` to drag the reader the way a finger would, `--goto <page>`, `--submit` for the Enter key, `--inspect` to print every label on screen plus the reader's own state (visible range, cached rasters, zoom), `--size 393x852` for a phone. `--script steps.json` takes the same steps as JSON, like `pdfcraft-cli run --script`.
 
-`--inspect` is how you find out what `--click` can target. A command that is greyed out does nothing when clicked, so if a click seems to be ignored, check that the engine thinks it is enabled — see below.
+`--click` matches a control's text or, for icon buttons, its tooltip, so you do not have to know which it is. `--inspect` lists both (`label:` for text, `button:` for tooltips) and is how you find out what `--click` can target. A command that is greyed out does nothing when clicked, so if a click seems to be ignored, check that the engine thinks it is enabled — see below.
 
 ## Commands come from the engine
 

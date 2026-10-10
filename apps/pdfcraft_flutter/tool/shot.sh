@@ -40,6 +40,7 @@ while [ $# -gt 0 ]; do
     --menu)    add "{\"menu\": $(printf '%s' "$2" | python3 -c 'import json,sys; print(json.dumps(sys.stdin.read()))')}"; shift 2 ;;
     --goto)    add "{\"goto\": $2}"; shift 2 ;;
     --scroll)  add "{\"scroll\": $2}"; shift 2 ;;
+    --submit)  add '{"submit": null}'; shift ;;
     --inspect) add '{"inspect": null}'; shift ;;
     -h|--help) sed -n '2,20p' "$0"; exit 0 ;;
     *) echo "unknown option: $1" >&2; exit 2 ;;
