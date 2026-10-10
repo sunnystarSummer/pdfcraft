@@ -33,6 +33,18 @@ The engine-backed tests skip when the library is missing, so `flutter test` alon
 
 `flutter test --update-goldens` writes `test/goldens/`. This is the Flutter equivalent of `cargo run -p pdfcraft-ui-egui --example shot`: it runs with no window and no display, takes about a second, and can be driven by label (`tester.tap(find.text(...))`) and typed into. `test/flutter_test_config.dart` loads a real text font and the Material icon font first — without it every glyph and icon renders as a filled box and the screenshots are useless for review.
 
+## Reading
+
+Pages scroll continuously, fitted to the width of the viewport when a document opens. Only what is on screen (plus a couple of pages either side) is rendered, and `lib/src/page_cache.dart` holds the rest of the bookkeeping: an LRU of rasters with a hard cap, and a request planner that never asks twice for the same page and never asks for one it already has.
+
+Three properties are worth stating because they are what make a long document usable:
+
+- **Memory is bounded.** At 150 dpi a Letter page is about 8 MB, so a 500-page document cannot be held. The cache caps at 24 rasters and evicts the least recently seen, never a page on screen. Scrolling a 76-page document, it settles at exactly 24/24 and stays there.
+- **Fast scrolling is cheap.** `queue` replaces the pending queue rather than appending, so work for pages that have already gone by is dropped before it starts. Flicking through 76 pages renders about 14, not 76.
+- **Nothing jumps.** A page still rendering keeps its full space, so the scroll position never shifts under the reader, and a zoom change keeps the page under the middle of the viewport where it was.
+
+Pages in one document need not be the same size, so the reader reads every page's box from `doc_info` rather than assuming one geometry.
+
 ## Looking at it (the agent loop)
 
 `CLAUDE.md` requires UI work to be looked at. The egui shell has `pdfcraft-cli ui --control FILE screenshot` and `cargo run -p pdfcraft-ui-egui --example shot`; this is the equivalent here, and it is headless too — no window, no display, a few seconds:
@@ -45,7 +57,7 @@ apps/pdfcraft_flutter/tool/shot.sh --out /tmp/shell.png \
   --inspect
 ```
 
-Verbs: `--open` a file, `--command <registry id>`, `--menu <title>` to open the command drawer and expand one menu, `--click <label>`, `--type <text>`, `--tap x,y`, `--inspect` to print every label on screen, `--size 393x852` for a phone. `--script steps.json` takes the same steps as JSON, like `pdfcraft-cli run --script`.
+Verbs: `--open` a file, `--command <registry id>`, `--menu <title>` to open the command drawer and expand one menu, `--click <label>`, `--type <text>`, `--tap x,y`, `--scroll <pixels>` to drag the reader the way a finger would, `--goto <page>`, `--inspect` to print every label on screen plus the reader's own state (visible range, cached rasters, zoom), `--size 393x852` for a phone. `--script steps.json` takes the same steps as JSON, like `pdfcraft-cli run --script`.
 
 `--inspect` is how you find out what `--click` can target. A command that is greyed out does nothing when clicked, so if a click seems to be ignored, check that the engine thinks it is enabled — see below.
 

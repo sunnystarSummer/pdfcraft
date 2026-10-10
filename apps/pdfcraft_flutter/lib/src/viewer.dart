@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 
 import 'commands.dart';
 import 'engine.dart';
+import 'page_cache.dart';
 
 /// One line of page text with its view-space rectangle (origin top-left, PDF points).
 class TextLine {
@@ -75,12 +76,30 @@ class ViewerPageState extends State<ViewerPage> {
   double _zoom = 1.0;
   String _status = 'starting';
   bool _dirty = false;
-  final Map<int, ui.Image> _pages = {};
   final List<String> _comments = [];
   Timer? _pump;
 
-  /// The page box in PDF points, as the engine reports it.
-  Size _pageSize = const Size(612, 792);
+  /// The rasters in hand, and the bookkeeping for what to ask for next.
+  final PageCache _cache = PageCache();
+
+  final ScrollController _scroll = ScrollController();
+
+  /// Every page's box in PDF points. Pages in one document need not be the same size, so the
+  /// reader cannot assume a single geometry.
+  List<Size> _pageSizes = const [];
+
+  /// The page the reader is looking at, and the visible range driving tile requests.
+  int _firstVisible = 1;
+  int _lastVisible = 1;
+
+  /// Set once, when the viewport width is first known: a page that opens wider than the screen
+  /// is not a reading experience.
+  bool _zoomInitialised = false;
+
+  /// The current page's box, for the selection overlay and hit-testing.
+  Size get _pageSize => _pageSizes.isEmpty || _current > _pageSizes.length
+      ? const Size(612, 792)
+      : _pageSizes[_current - 1];
 
   /// Text lines of the current page, in view space (origin top-left, PDF points), exactly as
   /// `text_lines` returns them. `apps/pdfcraft-ffi/tests/text_geometry.rs` pins that these
@@ -103,9 +122,8 @@ class ViewerPageState extends State<ViewerPage> {
   @override
   void dispose() {
     _pump?.cancel();
-    for (final img in _pages.values) {
-      img.dispose();
-    }
+    _scroll.dispose();
+    _cache.clear();
     if (widget.engine == null) _engine?.close();
     super.dispose();
   }
@@ -114,13 +132,25 @@ class ViewerPageState extends State<ViewerPage> {
 
   Future<void> _start() async {
     try {
-      final created = engine.call('doc_create', {
-        'from': 'text',
-        'text': 'PdfCraft Flutter shell\n\n'
-            'This page was created through the automation tool table and rasterised by the '
-            'engine\'s own render pool, handed over as premultiplied RGBA8.\n\n'
-            'Pinch or scroll to zoom. Add a comment, then save.',
-      });
+      // A few pages, so the shell opens on something that exercises the reader rather than a
+      // single page that never scrolls.
+      final demo = StringBuffer()
+        ..writeln('PdfCraft Flutter shell')
+        ..writeln()
+        ..writeln('These pages were created through the automation tool table and rasterised by '
+            "the engine's own render pool, handed over as premultiplied RGBA8.")
+        ..writeln()
+        ..writeln('Scroll to read. Only the pages in view are rendered, and the cache keeps at '
+            'most a couple of dozen of them, so a long document stays within a fixed memory '
+            'budget. Pinch or use the toolbar to zoom. Tap a line to select and copy it. Add a '
+            'comment, then save.')
+        ..writeln();
+      for (var page = 2; page <= 4; page++) {
+        for (var line = 0; line < 40; line++) {
+          demo.writeln('Page $page, line $line: rendered on demand and dropped when it scrolls away.');
+        }
+      }
+      final created = engine.call('doc_create', {'from': 'text', 'text': demo.toString()});
       _doc = created['doc'] as int;
       _pageCount = created['pages'] as int? ?? 1;
       _loadPage();
@@ -133,17 +163,23 @@ class ViewerPageState extends State<ViewerPage> {
     }
   }
 
-  /// Ask for the pages around the current one at the current zoom.
-  void _request() {
+  /// Ask for what the reader can see, plus a little either side.
+  ///
+  /// `queue` replaces the pending queue rather than appending, which is what makes fast
+  /// scrolling cheap: work for pages that have gone by is dropped before it starts.
+  void _request({bool force = false}) {
     final doc = _doc;
     if (doc == null) return;
     final dpr = MediaQuery.maybeDevicePixelRatioOf(context) ?? 2.0;
     final scale = _zoom * dpr;
-    final wanted = <TileRequest>[];
-    for (var p = _current; p <= _pageCount && p < _current + 3; p++) {
-      wanted.add(TileRequest(page: p, scale: scale, tag: scale.round()));
-    }
-    engine.queue(doc, wanted);
+    // After a zoom change what we hold is the wrong resolution, so `wanted` would skip it. The
+    // rasters stay on screen, scaled, until their replacements arrive.
+    final wanted = force
+        ? [for (var p = _firstVisible; p <= _lastVisible; p++) p]
+        : _cache.wanted(_firstVisible, _lastVisible, _pageCount);
+    if (force) _cache.forgetPending();
+    if (wanted.isEmpty) return;
+    engine.queue(doc, [for (final page in wanted) TileRequest(page: page, scale: scale, tag: scale.round())]);
   }
 
   Future<void> _drain() async {
@@ -151,23 +187,24 @@ class ViewerPageState extends State<ViewerPage> {
     if (doc == null || !mounted) return;
     final raster = await engine.poll(doc);
     if (raster == null || !mounted) return;
-    setState(() {
-      _pages[raster.page]?.dispose();
-      _pages[raster.page] = raster.image;
-    });
+    setState(() => _cache.put(
+          raster.page,
+          raster.image,
+          keep: {for (var p = _firstVisible; p <= _lastVisible; p++) p},
+        ));
   }
 
-  /// Page geometry and text lines for the current page.
+  /// Every page's geometry, and the text of the page in view.
   void _loadPage() {
     final doc = _doc;
     if (doc == null) return;
     try {
       final info = engine.call('doc_info', {'doc': doc});
       final pages = (info['pages'] as List?) ?? const [];
-      if (_current - 1 < pages.length) {
-        final p = pages[_current - 1] as Map<String, dynamic>;
-        _pageSize = Size((p['width'] as num).toDouble(), (p['height'] as num).toDouble());
-      }
+      _pageSizes = [
+        for (final p in pages.cast<Map<String, dynamic>>())
+          Size((p['width'] as num).toDouble(), (p['height'] as num).toDouble()),
+      ];
       final text = engine.call('text_lines', {'doc': doc, 'page': _current});
       _lines = ((text['lines'] as List?) ?? const [])
           .map((l) => TextLine.fromJson(l as Map<String, dynamic>))
@@ -179,12 +216,19 @@ class ViewerPageState extends State<ViewerPage> {
   }
 
   /// Select the line under a tap. `local` is in widget pixels within the page image.
-  void selectAt(Offset local, Size rendered) {
+  /// Select the line under a tap. `local` is in widget pixels within that page's box, and
+  /// `page` is the page tapped — in a continuous reader that need not be the current one.
+  void selectAt(Offset local, Size rendered, [int? page]) {
+    if (page != null && page != _current) {
+      setState(() => _current = page);
+      _loadPage();
+    }
     if (_lines.isEmpty || rendered.width <= 0) return;
+    final box = _sizeOf(page ?? _current);
     // Widget pixels -> view-space PDF points.
     final pt = Offset(
-      local.dx / rendered.width * _pageSize.width,
-      local.dy / rendered.height * _pageSize.height,
+      local.dx / rendered.width * box.width,
+      local.dy / rendered.height * box.height,
     );
     final hit = _lines.indexWhere((l) => l.rect.contains(pt));
     setState(() {
@@ -235,12 +279,21 @@ class ViewerPageState extends State<ViewerPage> {
     }
   }
 
+  /// Scroll so `page` is at the top of the viewport.
   void goToPage(int page) {
-    final target = page.clamp(1, _pageCount == 0 ? 1 : _pageCount);
-    if (target == _current) return;
-    setState(() => _current = target);
-    _loadPage();
-    _request();
+    if (_pageCount == 0) return;
+    final target = page.clamp(1, _pageCount);
+    if (!_scroll.hasClients) {
+      setState(() => _current = target);
+      _loadPage();
+      _request();
+      return;
+    }
+    var y = _gap;
+    for (var p = 1; p < target; p++) {
+      y += _slotHeight(p);
+    }
+    _scroll.jumpTo(y.clamp(0.0, _scroll.position.maxScrollExtent));
   }
 
   /// Open a PDF from disk. Returns the error when it fails, so a caller (and the shot driver)
@@ -253,12 +306,13 @@ class ViewerPageState extends State<ViewerPage> {
         _pageCount = opened['pages'] as int? ?? 1;
         _current = 1;
         _dirty = false;
-        for (final img in _pages.values) {
-          img.dispose();
-        }
-        _pages.clear();
+        _zoomInitialised = false;
+        _firstVisible = 1;
+        _lastVisible = 1;
+        _cache.clear();
         _status = 'opened';
       });
+      if (_scroll.hasClients) _scroll.jumpTo(0);
       _loadPage();
       _refreshCommands();
       _request();
@@ -286,7 +340,12 @@ class ViewerPageState extends State<ViewerPage> {
 
   /// The raster of the page on screen, if one has arrived. The shot driver waits on this so a
   /// screenshot is never taken of an empty viewport.
-  ui.Image? get pageImage => _pages[_current];
+  ui.Image? get pageImage => _cache[_current];
+
+  /// What the reader is holding, for the shot driver and for diagnosing memory growth.
+  String get readerStats =>
+      'pages=$_pageCount current=$_current visible=$_firstVisible..$_lastVisible '
+      'cached=${_cache.length}/${_cache.capacity} zoom=${(_zoom * 100).round()}%';
 
   /// Run a registry command by id. This is the Flutter shell's answer to the same question
   /// `crates/ui-egui/src/commands.rs` answers for egui: what does this id do *here*.
@@ -361,17 +420,134 @@ class ViewerPageState extends State<ViewerPage> {
     }
   }
 
+  /// The gap between pages, in logical pixels.
+  static const double _gap = 8;
+
+  Size _sizeOf(int page) =>
+      page - 1 < _pageSizes.length ? _pageSizes[page - 1] : const Size(612, 792);
+
+  /// A page's height on screen, including the gap below it.
+  double _slotHeight(int page) => _sizeOf(page).height * _zoom + _gap;
+
+  /// Open at fit-width rather than at 1 point per pixel, which on a phone shows a sliver.
+  void _initialiseZoom(double viewportWidth) {
+    if (_zoomInitialised || _pageSizes.isEmpty || viewportWidth <= 0) return;
+    _zoomInitialised = true;
+    final widest = _pageSizes.map((s) => s.width).reduce((a, b) => a > b ? a : b);
+    if (widest > 0) {
+      // Scheduled, because this runs during layout.
+      final fit = (viewportWidth - 2 * _gap) / widest;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) setZoom(fit);
+      });
+    }
+  }
+
+  /// Work out which pages the reader can see, and ask for them if that changed.
+  void _onScroll(double viewportHeight) {
+    if (!_scroll.hasClients || _pageCount == 0) return;
+    final top = _scroll.offset;
+    final bottom = top + viewportHeight;
+
+    var y = _gap;
+    var first = 1;
+    var last = 1;
+    var seenFirst = false;
+    for (var page = 1; page <= _pageCount; page++) {
+      final height = _slotHeight(page);
+      if (y + height >= top && !seenFirst) {
+        first = page;
+        seenFirst = true;
+      }
+      if (y <= bottom) last = page;
+      y += height;
+      if (y > bottom) break;
+    }
+
+    // The page "in view" is the one covering the middle of the viewport, which is what a reader
+    // means by the page they are on.
+    final middle = top + viewportHeight / 2;
+    var current = first;
+    y = _gap;
+    for (var page = 1; page <= _pageCount; page++) {
+      final height = _slotHeight(page);
+      if (middle >= y && middle < y + height) {
+        current = page;
+        break;
+      }
+      y += height;
+    }
+
+    if (first == _firstVisible && last == _lastVisible && current == _current) return;
+    final pageChanged = current != _current;
+    setState(() {
+      _firstVisible = first;
+      _lastVisible = last;
+      _current = current;
+    });
+    if (pageChanged) _loadPage();
+    _request();
+  }
+
+  /// One page: its raster if we have it, its outline if we do not, and the selection on top.
+  Widget _pageBox(int page, double viewportWidth) {
+    final size = _sizeOf(page);
+    final width = size.width * _zoom;
+    final height = size.height * _zoom;
+    final img = _cache[page];
+    return Padding(
+      padding: EdgeInsets.only(bottom: _gap),
+      child: Center(
+        child: GestureDetector(
+          onTapDown: (d) => selectAt(d.localPosition, Size(width, height), page),
+          child: Container(
+            width: width,
+            height: height,
+            color: Colors.white,
+            child: img == null
+                // A page still rendering keeps its space, so the scroll position never jumps.
+                ? const SizedBox.expand()
+                : Stack(
+                    fit: StackFit.expand,
+                    children: [
+                      RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.medium),
+                      if (page == _current)
+                        CustomPaint(
+                          painter: _SelectionPainter(
+                            _selected >= 0 && _selected < _lines.length ? _lines[_selected].rect : null,
+                            size,
+                          ),
+                        ),
+                    ],
+                  ),
+          ),
+        ),
+      ),
+    );
+  }
+
   /// Set the status line (used by tests to exercise long text).
   void showStatus(String text) => setState(() => _status = text);
 
   void setZoom(double z) {
-    setState(() => _zoom = z.clamp(0.25, 8.0));
-    _request();
+    final was = _zoom;
+    final next = z.clamp(0.25, 8.0);
+    if (next == was) return;
+    // Keep the reader's place: the page under the middle of the viewport stays there.
+    final anchor = _scroll.hasClients ? _scroll.offset : 0.0;
+    setState(() => _zoom = next);
+    if (_scroll.hasClients && was > 0) {
+      final scaled = anchor / was * next;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted || !_scroll.hasClients) return;
+        _scroll.jumpTo(scaled.clamp(0.0, _scroll.position.maxScrollExtent));
+      });
+    }
+    _request(force: true);
   }
 
   @override
   Widget build(BuildContext context) {
-    final img = _pages[_current];
     return Scaffold(
       key: scaffoldKey,
       drawer: _CommandDrawer(
@@ -396,51 +572,25 @@ class ViewerPageState extends State<ViewerPage> {
           Expanded(
             child: ColoredBox(
               color: const Color(0xFF3A3A3C),
-              child: Center(
-                child: img == null
-                    ? Text(_status, style: const TextStyle(color: Colors.white))
-                    : LayoutBuilder(
-                        builder: (context, constraints) {
-                          // Fit the page inside the viewport, preserving its aspect. The size
-                          // computed here is the size actually laid out, and the hit-test uses
-                          // the same number: a SizedBox asked for the image's natural width is
-                          // silently clamped by the parent's constraints, which made taps land
-                          // in the wrong place.
-                          final aspect = _pageSize.width / _pageSize.height;
-                          var w = constraints.maxWidth;
-                          var h = w / aspect;
-                          if (h > constraints.maxHeight) {
-                            h = constraints.maxHeight;
-                            w = h * aspect;
-                          }
-                          final rendered = Size(w, h);
-                          return InteractiveViewer(
-                            minScale: 1,
-                            maxScale: 4,
-                            child: Center(
-                              child: GestureDetector(
-                                onTapDown: (d) => selectAt(d.localPosition, rendered),
-                                child: SizedBox(
-                                  width: w,
-                                  height: h,
-                                  child: Stack(
-                                    fit: StackFit.expand,
-                                    children: [
-                                      RawImage(image: img, fit: BoxFit.fill, filterQuality: FilterQuality.medium),
-                                      CustomPaint(
-                                        painter: _SelectionPainter(
-                                          _selected >= 0 && _selected < _lines.length ? _lines[_selected].rect : null,
-                                          _pageSize,
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          );
-                        },
-                      ),
+              child: LayoutBuilder(
+                builder: (context, constraints) {
+                  if (_pageCount == 0) {
+                    return Center(child: Text(_status, style: const TextStyle(color: Colors.white)));
+                  }
+                  _initialiseZoom(constraints.maxWidth);
+                  return NotificationListener<ScrollNotification>(
+                    onNotification: (_) {
+                      _onScroll(constraints.maxHeight);
+                      return false;
+                    },
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding: EdgeInsets.symmetric(vertical: _gap),
+                      itemCount: _pageCount,
+                      itemBuilder: (context, index) => _pageBox(index + 1, constraints.maxWidth),
+                    ),
+                  );
+                },
               ),
             ),
           ),

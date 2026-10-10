@@ -62,6 +62,15 @@ void main() {
             await tester.tap(title.first);
             await tester.pumpAndSettle();
           }
+        case 'goto':
+          state.goToPage(arg as int);
+          await _settleRasters(tester, until: () => state.pageImage != null);
+        case 'scroll':
+          // Drag the reader by `arg` logical pixels, so continuous scrolling is exercised the
+          // way a finger would, not by jumping the controller.
+          await tester.drag(find.byType(ListView), Offset(0, -(arg as num).toDouble()));
+          await tester.pumpAndSettle();
+          await _settleRasters(tester);
         case 'click':
           final target = find.text(arg as String);
           expect(target, findsWidgets, reason: 'no control labelled "$arg"');
@@ -72,6 +81,7 @@ void main() {
           final xy = (arg as List).cast<num>();
           await tester.tapAt(Offset(xy[0].toDouble(), xy[1].toDouble()));
         case 'inspect':
+          stderr.writeln('  reader: ${state.readerStats}');
           for (final w in tester.widgetList<Text>(find.byType(Text))) {
             if ((w.data ?? '').trim().isNotEmpty) stderr.writeln('  label: ${w.data}');
           }
