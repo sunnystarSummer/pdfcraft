@@ -6,6 +6,8 @@ plan/
 /log
 .DS_Store
 /fuzz-out
+# Flutter writes iOS/macOS build state here when building apps/pdfcraft_flutter.
+/build
 /assets/models
 # A craft-fonts checkout used as the optional CRAFT_FONTS_DIR build input (CI and releases put it here).
 /craft-fonts

@@ -1,7 +1,9 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
-exclude = ["vendor"]
+# `apps/pdfcraft_flutter` is the Dart shell, not a Cargo package; the `apps/*` glob would
+# otherwise try to read a Cargo.toml it does not have.
+exclude = ["vendor", "apps/pdfcraft_flutter"]
 default-members = ["crates/*", "apps/pdfcraft", "apps/pdfcraft-cli", "xtask"]
 
 [workspace.package]
