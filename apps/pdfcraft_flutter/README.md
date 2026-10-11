@@ -67,6 +67,14 @@ Flutter's own strings (the drawer tooltip, date pickers) are Flutter's to transl
 
 `test/i18n_test.dart` keeps this honest: every string the shell shows must be a key the catalogues know, or be listed in `notYetTranslated`. Without it, a typo in a `tl()` key shows in English and nothing says so.
 
+## Safe areas
+
+`Scaffold.body` applies no insets of its own, so anything at the end of its `Column` lands in the system's own strip. On an iPhone 15 Pro the bottom inset is 34pt — measured, not assumed — which was 34 of the bottom bar's 48pt, putting the page buttons under the home-indicator swipe area.
+
+The bar is wrapped in `SafeArea(top: false)`: `top` is false because the app bar has already taken the top inset, and leaving it true would add it twice. The page area keeps its full-bleed dark background but pads its scroll content by the horizontal insets, so in landscape the notch eats a strip of background rather than a strip of page.
+
+`test/safe_area_test.dart` injects insets through `MediaQuery` rather than needing a device, and asserts the controls stay inside the safe area in portrait, in landscape, and that a device without a notch grows no margin. Three of its four cases fail if the `SafeArea` is removed.
+
 ## Looking at it (the agent loop)
 
 `CLAUDE.md` requires UI work to be looked at. The egui shell has `pdfcraft-cli ui --control FILE screenshot` and `cargo run -p pdfcraft-ui-egui --example shot`; this is the equivalent here, and it is headless too — no window, no display, a few seconds:

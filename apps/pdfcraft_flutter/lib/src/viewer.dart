@@ -125,9 +125,8 @@ class ViewerPageState extends State<ViewerPage> {
   bool _zoomInitialised = false;
 
   /// The current page's box, for the selection overlay and hit-testing.
-  Size get _pageSize => _pageSizes.isEmpty || _current > _pageSizes.length
-      ? const Size(612, 792)
-      : _pageSizes[_current - 1];
+  Size get _pageSize =>
+      _pageSizes.isEmpty || _current > _pageSizes.length ? const Size(612, 792) : _pageSizes[_current - 1];
 
   /// Text lines of the current page, in view space (origin top-left, PDF points), exactly as
   /// `text_lines` returns them. `apps/pdfcraft-ffi/tests/text_geometry.rs` pins that these
@@ -171,13 +170,17 @@ class ViewerPageState extends State<ViewerPage> {
       final demo = StringBuffer()
         ..writeln('PdfCraft Flutter shell')
         ..writeln()
-        ..writeln('These pages were created through the automation tool table and rasterised by '
-            "the engine's own render pool, handed over as premultiplied RGBA8.")
+        ..writeln(
+          'These pages were created through the automation tool table and rasterised by '
+          "the engine's own render pool, handed over as premultiplied RGBA8.",
+        )
         ..writeln()
-        ..writeln('Scroll to read. Only the pages in view are rendered, and the cache keeps at '
-            'most a couple of dozen of them, so a long document stays within a fixed memory '
-            'budget. Pinch or use the toolbar to zoom. Tap a line to select and copy it. Add a '
-            'comment, then save.')
+        ..writeln(
+          'Scroll to read. Only the pages in view are rendered, and the cache keeps at '
+          'most a couple of dozen of them, so a long document stays within a fixed memory '
+          'budget. Pinch or use the toolbar to zoom. Tap a line to select and copy it. Add a '
+          'comment, then save.',
+        )
         ..writeln();
       for (var page = 2; page <= 4; page++) {
         for (var line = 0; line < 40; line++) {
@@ -221,11 +224,9 @@ class ViewerPageState extends State<ViewerPage> {
     if (doc == null || !mounted) return;
     final raster = await engine.poll(doc);
     if (raster == null || !mounted) return;
-    setState(() => _cache.put(
-          raster.page,
-          raster.image,
-          keep: {for (var p = _firstVisible; p <= _lastVisible; p++) p},
-        ));
+    setState(
+      () => _cache.put(raster.page, raster.image, keep: {for (var p = _firstVisible; p <= _lastVisible; p++) p}),
+    );
   }
 
   /// Every page's geometry, and the text of the page in view.
@@ -260,10 +261,7 @@ class ViewerPageState extends State<ViewerPage> {
     if (_lines.isEmpty || rendered.width <= 0) return;
     final box = _sizeOf(page ?? _current);
     // Widget pixels -> view-space PDF points.
-    final pt = Offset(
-      local.dx / rendered.width * box.width,
-      local.dy / rendered.height * box.height,
-    );
+    final pt = Offset(local.dx / rendered.width * box.width, local.dy / rendered.height * box.height);
     final hit = _lines.indexWhere((l) => l.rect.contains(pt));
     setState(() {
       _selected = hit;
@@ -406,11 +404,19 @@ class ViewerPageState extends State<ViewerPage> {
       // Commands whose tool needs arguments the registry does not carry. The egui shell asks
       // the user (a dialog, a selection); on mobile these act on the page in view.
       case 'page.rotate':
-        return _viaTool('page_rotate', {'degrees': 90, 'pages': [_current]});
+        return _viaTool('page_rotate', {
+          'degrees': 90,
+          'pages': [_current],
+        });
       case 'page.rotate_ccw':
-        return _viaTool('page_rotate', {'degrees': -90, 'pages': [_current]});
+        return _viaTool('page_rotate', {
+          'degrees': -90,
+          'pages': [_current],
+        });
       case 'page.duplicate':
-        return _viaTool('page_duplicate', {'pages': [_current]});
+        return _viaTool('page_duplicate', {
+          'pages': [_current],
+        });
       case 'page.insert_blank':
         return _viaTool('page_insert_blank', {'at': _current});
     }
@@ -462,8 +468,7 @@ class ViewerPageState extends State<ViewerPage> {
   /// The gap between pages, in logical pixels.
   static const double _gap = 8;
 
-  Size _sizeOf(int page) =>
-      page - 1 < _pageSizes.length ? _pageSizes[page - 1] : const Size(612, 792);
+  Size _sizeOf(int page) => page - 1 < _pageSizes.length ? _pageSizes[page - 1] : const Size(612, 792);
 
   /// A page's height on screen, including the gap below it.
   double _slotHeight(int page) => _sizeOf(page).height * _zoom + _gap;
@@ -669,11 +674,7 @@ class ViewerPageState extends State<ViewerPage> {
       ),
       appBar: _searching
           ? AppBar(
-              leading: IconButton(
-                onPressed: clearSearch,
-                icon: const Icon(Icons.arrow_back),
-                tooltip: tl('Close'),
-              ),
+              leading: IconButton(onPressed: clearSearch, icon: const Icon(Icons.arrow_back), tooltip: tl('Close')),
               title: TextField(
                 controller: _query,
                 autofocus: true,
@@ -703,10 +704,22 @@ class ViewerPageState extends State<ViewerPage> {
                   icon: const Icon(Icons.search),
                   tooltip: tl('Find…'),
                 ),
-                IconButton(onPressed: () => setZoom(_zoom / 1.25), icon: const Icon(Icons.zoom_out), tooltip: tl('Zoom out')),
+                IconButton(
+                  onPressed: () => setZoom(_zoom / 1.25),
+                  icon: const Icon(Icons.zoom_out),
+                  tooltip: tl('Zoom out'),
+                ),
                 Center(child: Text('${(_zoom * 100).round()}%')),
-                IconButton(onPressed: () => setZoom(_zoom * 1.25), icon: const Icon(Icons.zoom_in), tooltip: tl('Zoom in')),
-                IconButton(onPressed: addComment, icon: const Icon(Icons.add_comment), tooltip: tl('Add a sticky note')),
+                IconButton(
+                  onPressed: () => setZoom(_zoom * 1.25),
+                  icon: const Icon(Icons.zoom_in),
+                  tooltip: tl('Zoom in'),
+                ),
+                IconButton(
+                  onPressed: addComment,
+                  icon: const Icon(Icons.add_comment),
+                  tooltip: tl('Add a sticky note'),
+                ),
               ],
             ),
       body: Column(
@@ -717,9 +730,15 @@ class ViewerPageState extends State<ViewerPage> {
               child: LayoutBuilder(
                 builder: (context, constraints) {
                   if (_pageCount == 0) {
-                    return Center(child: Text(_status, style: const TextStyle(color: Colors.white)));
+                    return Center(
+                      child: Text(_status, style: const TextStyle(color: Colors.white)),
+                    );
                   }
                   _initialiseZoom(constraints.maxWidth);
+                  // The dark background runs to the edges, but the pages do not: in landscape
+                  // the notch eats a strip down one side, and a page under it is unreadable.
+                  // Padding rather than a SafeArea so the background still fills the screen.
+                  final side = MediaQuery.viewPaddingOf(context);
                   return NotificationListener<ScrollNotification>(
                     onNotification: (_) {
                       _onScroll(constraints.maxHeight);
@@ -727,7 +746,7 @@ class ViewerPageState extends State<ViewerPage> {
                     },
                     child: ListView.builder(
                       controller: _scroll,
-                      padding: EdgeInsets.symmetric(vertical: _gap),
+                      padding: EdgeInsets.fromLTRB(side.left, _gap, side.right, _gap),
                       itemCount: _pageCount,
                       itemBuilder: (context, index) => _pageBox(index + 1, constraints.maxWidth),
                     ),
@@ -736,34 +755,36 @@ class ViewerPageState extends State<ViewerPage> {
               ),
             ),
           ),
-          SizedBox(
-            height: 48,
-            child: Row(
-              children: [
-                IconButton(
-                  onPressed: _current > 1 ? () => goToPage(_current - 1) : null,
-                  icon: const Icon(Icons.chevron_left),
-                  tooltip: tl('Previous page'),
-                ),
-                Text(fmt(tl('Page {p} of {n}'), {'p': '$_current', 'n': '$_pageCount'})),
-                IconButton(
-                  onPressed: _current < _pageCount ? () => goToPage(_current + 1) : null,
-                  icon: const Icon(Icons.chevron_right),
-                  tooltip: tl('Next page'),
-                ),
-                const SizedBox(width: 8),
-                // The status carries selected text, which is arbitrarily long: it has to flex
-                // and clip, or the row overflows.
-                Expanded(
-                  child: Text(
-                    _status,
-                    textAlign: TextAlign.right,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
+          // `Scaffold.body` applies no insets of its own, so without this the bar sits in the
+          // home-indicator strip: on an iPhone 15 Pro that is 34pt of a 48pt bar, putting the
+          // page buttons under the system's own swipe area. `top: false` because the app bar
+          // has already taken the top inset.
+          SafeArea(
+            top: false,
+            child: SizedBox(
+              height: 48,
+              child: Row(
+                children: [
+                  IconButton(
+                    onPressed: _current > 1 ? () => goToPage(_current - 1) : null,
+                    icon: const Icon(Icons.chevron_left),
+                    tooltip: tl('Previous page'),
                   ),
-                ),
-                const SizedBox(width: 12),
-              ],
+                  Text(fmt(tl('Page {p} of {n}'), {'p': '$_current', 'n': '$_pageCount'})),
+                  IconButton(
+                    onPressed: _current < _pageCount ? () => goToPage(_current + 1) : null,
+                    icon: const Icon(Icons.chevron_right),
+                    tooltip: tl('Next page'),
+                  ),
+                  const SizedBox(width: 8),
+                  // The status carries selected text, which is arbitrarily long: it has to flex
+                  // and clip, or the row overflows.
+                  Expanded(
+                    child: Text(_status, textAlign: TextAlign.right, maxLines: 1, overflow: TextOverflow.ellipsis),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+              ),
             ),
           ),
         ],
